@@ -8,13 +8,13 @@ class OwlDetector(ABC):
     
     DEFAULT_MODEL_NAME = None  # Must be defined by subclasses
     
-    def __init__(self, model_name=None, target_objects=None, threshold=0.15):
+    def __init__(self, model_name=None, objects=None, threshold=0.15):
         """
         Initialize the ObjectDetector with a model and the objects to detect.
 
         Args:
             model_name (str): The name of the pretrained model to use.
-            target_objects (list): List of object labels to detect.
+            objects (list): List of object labels to detect.
             threshold (float): Detection confidence threshold.
         """
         if model_name is None:
@@ -22,7 +22,7 @@ class OwlDetector(ABC):
         else:
             self.model_name = model_name
 
-        self.target_objects = target_objects if target_objects else []
+        self.objects = objects if objects else []
 
         self.threshold = threshold
         
@@ -54,7 +54,7 @@ class OwlDetector(ABC):
         Returns:
             detections (list of dict): Each dict contains 'label', 'box', 'score'.
         """
-        texts = [self.target_objects]
+        texts = [self.objects]
         inputs = self.processor(images=frame, text=texts, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
@@ -72,7 +72,7 @@ class OwlDetector(ABC):
         detections = []
         for box, score, label in zip(boxes, scores, labels):
             detections.append({
-                "label": self.target_objects[label.item()],
+                "label": self.objects[label.item()],
                 "box": [int(i) for i in box.tolist()],
                 "score": score.item()
             })
