@@ -1,0 +1,9 @@
+# install torch with the proper pip command given your setup as determined at https://pytorch.org/get-started/locally/
+# e.g. pip3 install torch --index-url https://download.pytorch.org/whl/cu129
+
+opencv-python==4.11.0.86 # this version if fixed due to an issue with the more recent version
+torchvision
+transformers
+pillow
+six
+scipy
