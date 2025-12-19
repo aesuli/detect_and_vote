@@ -1,11 +1,12 @@
 import cherrypy
+import os
+os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 import cv2
 import json
 import threading
 import io
 from typing import Optional, List, Dict
 from owl_detector import Owlv2Detector, OwlViTDetector
-
 
 class ObjectDetectionApp:
     """CherryPy web app for object detection with webcam stream."""
@@ -227,7 +228,7 @@ class ObjectDetectionApp:
         cherrypy.response.headers['Content-Type'] = 'multipart/x-mixed-replace; boundary=frame'
         
         def generate():
-            while self.running:
+            while True:
                 with self.lock:
                     frame = self.current_frame_with_detections
                 
@@ -249,7 +250,7 @@ class ObjectDetectionApp:
         cherrypy.response.headers['Content-Type'] = 'multipart/x-mixed-replace; boundary=frame'
         
         def generate():
-            while self.running:
+            while True:
                 with self.lock:
                     frame = self.current_frame
                 
@@ -301,6 +302,38 @@ class ObjectDetectionApp:
                 a:hover {{ text-decoration: underline; }}
                 .inline {{ display: flex; gap: 10px; align-items: center; }}
                 .inline input {{ width: 100%; }}
+                .notification {{
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 15px 20px;
+                    border-radius: 5px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                    z-index: 1000;
+                    display: none;
+                    min-width: 300px;
+                    animation: slideIn 0.3s ease-out;
+                }}
+                .notification.success {{
+                    background-color: #d4edda;
+                    color: #155724;
+                    border: 1px solid #c3e6cb;
+                }}
+                .notification.error {{
+                    background-color: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                }}
+                @keyframes slideIn {{
+                    from {{
+                        transform: translateX(400px);
+                        opacity: 0;
+                    }}
+                    to {{
+                        transform: translateX(0);
+                        opacity: 1;
+                    }}
+                }}
             </style>
             <script>
                 function onResolutionChange(val) {{
@@ -311,14 +344,56 @@ class ObjectDetectionApp:
                         document.getElementById('frame_height').value = parts[1];
                     }}
                 }}
+                
+                function showNotification(message, type) {{
+                    const notification = document.getElementById('notification');
+                    notification.textContent = message;
+                    notification.className = 'notification ' + type;
+                    notification.style.display = 'block';
+                    
+                    setTimeout(() => {{
+                        notification.style.display = 'none';
+                    }}, 5000);
+                }}
+                
+                function handleSubmit(event) {{
+                    event.preventDefault();
+                    const form = event.target;
+                    const formData = new FormData(form);
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'Applying...';
+                    
+                    fetch('/apply_settings', {{
+                        method: 'POST',
+                        body: formData
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.status === 'success') {{
+                            showNotification(data.message, 'success');
+                        }} else {{
+                            showNotification(data.message, 'error');
+                        }}
+                    }})
+                    .catch(error => {{
+                        showNotification('Error: ' + error.message, 'error');
+                    }})
+                    .finally(() => {{
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Apply Settings';
+                    }});
+                }}
             </script>
         </head>
         <body>
+            <div id="notification" class="notification"></div>
             <h1>Settings</h1>
             <div class="info">
                 <p><strong>Note:</strong> Changes take effect after clicking "Apply Settings".</p>
             </div>
-            <form method="POST" action="/apply_settings">
+            <form method="POST" action="/apply_settings" onsubmit="handleSubmit(event)">
                 <div class="form-group">
                     <label for="detector">Detector Type:</label>
                     <select name="detector" id="detector" required>
@@ -371,6 +446,7 @@ class ObjectDetectionApp:
         """
     
     @cherrypy.expose
+    @cherrypy.tools.json_out()
     def apply_settings(self, **kwargs):
         """Apply new settings from the form."""
         try:
@@ -427,55 +503,21 @@ class ObjectDetectionApp:
                         
             # Generate appropriate message based on what changed
             if model_reload_needed:
-                model_reload_msg = "The model has been reloaded."
+                model_reload_msg = "Settings applied successfully! The model has been reloaded."
             elif detector_params_changed:
-                model_reload_msg = "Detection parameters (objects/threshold) updated without reloading the model."
+                model_reload_msg = "Settings applied successfully! Detection parameters updated without reloading the model."
             else:
-                model_reload_msg = "Settings updated successfully."
+                model_reload_msg = "Settings updated successfully!"
             
-            return f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Settings Applied</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                    .success {{ background-color: #d4edda; padding: 15px; border-radius: 5px; color: #155724; }}
-                    a {{ text-decoration: none; color: #0066cc; }}
-                </style>
-            </head>
-            <body>
-                <div class="success">
-                    <h2>Settings Applied Successfully!</h2>
-                    <p>{model_reload_msg}</p>
-                </div>
-                <a href="/settings">← Back to Settings</a><br>
-                <a href="/">← Back to Home</a>
-            </body>
-            </html>
-            """
+            return {
+                "status": "success",
+                "message": model_reload_msg
+            }
         except Exception as e:
-            return f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                    .error {{ background-color: #f8d7da; padding: 15px; border-radius: 5px; color: #721c24; }}
-                    a {{ text-decoration: none; color: #0066cc; }}
-                </style>
-            </head>
-            <body>
-                <div class="error">
-                    <h2>Error Applying Settings</h2>
-                    <p>{str(e)}</p>
-                </div>
-                <a href="/settings">← Back to Settings</a><br>
-                <a href="/">← Back to Home</a>
-            </body>
-            </html>
-            """
+            return {
+                "status": "error",
+                "message": f"Error applying settings: {str(e)}"
+            }
     
     @cherrypy.expose
     @cherrypy.tools.json_out()

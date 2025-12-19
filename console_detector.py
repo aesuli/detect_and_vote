@@ -1,6 +1,7 @@
+import os
+os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 import cv2
 import argparse
-import os
 from typing import Optional
 from owl_detector import Owlv2Detector, OwlViTDetector
 
