@@ -2,7 +2,7 @@ import cv2
 import argparse
 import os
 from typing import Optional
-from owldetector import Owlv2Detector, OwlViTDetector
+from owl_detector import Owlv2Detector, OwlViTDetector
 
 def render_detections_on_frame(frame, detections):
     """
@@ -58,6 +58,19 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
     frame_count = 0
     out = None
 
+    if output_file and not out:
+        cap_fps = cap.get(cv2.CAP_PROP_FPS)
+        use_fps = fps if fps and fps > 0 else (cap_fps if cap_fps and cap_fps > 0 else 20.0)
+
+        fourcc = _pick_fourcc_for_extension(output_file)
+        out = cv2.VideoWriter(output_file, fourcc, use_fps, (frame_width, frame_height))
+        if not out.isOpened():
+            print(f"Warning: Could not open VideoWriter for '{output_file}'. Disabling video saving.")
+            output_file = None
+            out = None
+        else:
+            print(f"Saving video to '{output_file}' at {use_fps:.2f} FPS, size {frame_width}x{frame_height}.")
+
     while True:
         ret, frame = cap.read()
 
@@ -66,19 +79,6 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
             break
 
         frame_height, frame_width = frame.shape[:2]
-
-        if output_file and not out:
-            cap_fps = cap.get(cv2.CAP_PROP_FPS)
-            use_fps = fps if fps and fps > 0 else (cap_fps if cap_fps and cap_fps > 0 else 20.0)
-
-            fourcc = _pick_fourcc_for_extension(output_file)
-            out = cv2.VideoWriter(output_file, fourcc, use_fps, (frame_width, frame_height))
-            if not out.isOpened():
-                print(f"Warning: Could not open VideoWriter for '{output_file}'. Disabling video saving.")
-                output_file = None
-                out = None
-            else:
-                print(f"Saving video to '{output_file}' at {use_fps:.2f} FPS, size {frame_width}x{frame_height}.")
 
         if frame_count % frame_skip == 0:
             detections = detector.detect_objects(frame)

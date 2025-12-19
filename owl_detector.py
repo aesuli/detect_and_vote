@@ -44,6 +44,26 @@ class OwlDetector(ABC):
         """
         pass
 
+    def set_objects(self, objects):
+        """
+        Update the list of objects to detect without reloading the model.
+
+        Args:
+            objects (list): New list of object labels to detect.
+        """
+        self.objects = objects if objects else []
+        print(f"Updated detection objects: {self.objects}")
+
+    def set_threshold(self, threshold):
+        """
+        Update the detection confidence threshold without reloading the model.
+
+        Args:
+            threshold (float): New detection confidence threshold.
+        """
+        self.threshold = float(threshold)
+        print(f"Updated detection threshold: {self.threshold}")
+
     def detect_objects(self, frame):
         """
         Detect objects in the provided frame.
