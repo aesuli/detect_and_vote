@@ -7,6 +7,7 @@ import threading
 import io
 from typing import Optional, List, Dict
 from owl_detector import Owlv2Detector, OwlViTDetector
+from cherrypy.process.plugins import SignalHandler
 
 class ObjectDetectionApp:
     """CherryPy web app for object detection with webcam stream."""
@@ -528,12 +529,23 @@ class ObjectDetectionApp:
         
         return {
             "status": "success",
-            "detections": detections,
-            "count": len(detections),
-            "detector_type": self.detector_type,
+            "model": { 
+                "type":self.detector_type, 
+                "name": self.model_name 
+            },
+            "frame": { 
+                "width": self.frame_width,
+                "height": self.frame_height
+            },
             "threshold": self.threshold,
-            "objects": self.objects
+            "objects": self.objects,
+            "detections": detections
         }
+
+def app_exit(app):
+    print("\nShutting down...")
+    app.stop_capture()
+    cherrypy.engine.exit()
 
 
 def main():
@@ -558,13 +570,16 @@ def main():
     print("Starting Object Detection Web App on http://localhost:8080")
     print("Press Ctrl+C to stop the server")
     
-    try:
-        cherrypy.engine.start()
-        cherrypy.engine.wait(cherrypy.engine.states.STARTED)
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        app.stop_capture()
-        cherrypy.engine.exit()
+    signal_handler = SignalHandler(cherrypy.engine)
+    exit_fun = lambda: app_exit(app)
+    signal_handler.handlers['SIGTERM'] = exit_fun
+    signal_handler.handlers['SIGHUP'] = exit_fun
+    signal_handler.handlers['SIGQUIT'] = exit_fun
+    signal_handler.handlers['SIGINT'] = exit_fun
+    signal_handler.subscribe()
+
+    cherrypy.engine.start()
+    cherrypy.engine.block()
 
 
 if __name__ == '__main__':
