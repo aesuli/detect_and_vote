@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Region Counter and Quiz Voting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/web_count_and_vote.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="panel-toggle-bar" id="panelToggleBar">
+    <div class="panel-toggle-content" id="panelToggleContent">
+      <div class="panel-toggle-title mono">Show or hide panels</div>
+      <label class="panel-toggle-item" for="toggleBackendView">
+        <input id="toggleBackendView" type="checkbox" checked />
+        <span>Configuration</span>
+      </label>
+      <label class="panel-toggle-item" for="toggleStreamView">
+        <input id="toggleStreamView" type="checkbox" checked />
+        <span>Video stream</span>
+      </label>
+      <label class="panel-toggle-item" for="toggleVoteInfoView">
+        <input id="toggleVoteInfoView" type="checkbox" checked />
+        <span>Counts and votes</span>
+      </label>
+      <label class="panel-toggle-item" for="toggleCountView">
+        <input id="toggleCountView" type="checkbox" checked />
+        <span>Count graph</span>
+      </label>
+    </div>
+    <button type="button" class="panel-toggle-handle mono" id="panelToggleHandle" aria-expanded="false" aria-controls="panelToggleContent">↓</button>
+  </div>
+
+  <div class="page">
+    <div class="panel" id="backendView">
+      <h1>Count & Vote</h1>
+      <div class="chip mono" id="modeLabel">Mode: counting</div>
+
+      <h2>Detection</h2>
+      <label>Detector</label>
+      <select id="detectorType">
+        <option value="owlvit">OWL-ViT</option>
+        <option value="owlv2">OWL-v2</option>
+      </select>
+      <label>Objects (one per line)</label>
+      <textarea id="objectsInput" rows="3">a person</textarea>
+      <label>Threshold</label>
+      <input id="thresholdInput" type="number" min="0" max="1" step="0.01" value="0.15" />
+      <label>Frame Skip</label>
+      <input id="frameSkipInput" type="number" min="1" step="1" value="4" />
+      <label>Update Interval (ms)</label>
+      <input id="updateIntervalInput" type="number" min="100" max="5000" step="50" value="650" />
+      <div class="toggle-line">
+        <input id="showDetectionLabel" type="checkbox" checked />
+        <label for="showDetectionLabel">Show label &amp; confidence</label>
+      </div>
+      <div class="toggle-line">
+        <input id="mirrorView" type="checkbox" />
+        <label for="mirrorView">Mirror camera view</label>
+      </div>
+
+      <h2>Regions</h2>
+      <div class="row">
+        <div>
+          <label>Answer 1 Color</label>
+          <input id="answer1Color" class="color-input" type="color" value="#0066cc" />
+        </div>
+        <div>
+          <label>Answer 2 Color</label>
+          <input id="answer2Color" class="color-input" type="color" value="#ffcc00" />
+        </div>
+      </div>
+      <label>Assigned Answer</label>
+      <select id="regionAnswerSlot">
+        <option value="1">Answer 1</option>
+        <option value="2">Answer 2</option>
+      </select>
+      <label>Criterion</label>
+      <select id="regionCriterion">
+        <option value="overlap">Overlap</option>
+        <option value="inside">Fully Inside</option>
+      </select>
+      <button class="btn-primary" id="createRegion">Create Region</button>
+      <div class="list" id="regionList"></div>
+      <button class="btn-danger" id="deleteSelectedRegion">Delete Selected Region</button>
+
+      <h2>Voting</h2>
+      <div class="row">
+        <div>
+          <label>Vote Timer (s)</label>
+          <input id="voteDuration" type="number" value="30" min="1" />
+        </div>
+        <div>
+          <label>Pause (s)</label>
+          <input id="pauseDuration" type="number" value="10" min="0" />
+        </div>
+      </div>
+      <label>Rolling Window</label>
+      <input id="rollingWindow" type="number" value="50" min="1" />
+      <div class="row">
+        <button class="btn-primary" id="startVoting">Start Voting</button>
+        <button class="btn-danger" id="stopVoting">Stop Voting</button>
+      </div>
+
+      <label>Question Pool JSON</label>
+      <textarea id="questionsJson" rows="6" placeholder='[{"question":"...","answers":["A","B"],"correct_answer":"A"}]'></textarea>
+      <button id="loadQuestions">Load Questions JSON</button>
+
+      <div id="flash" class="chip" style="margin-top:8px;">Ready</div>
+    </div>
+
+    <div class="workspace">
+      <div class="panel" id="streamView">
+        <div class="video-wrap" id="videoWrap">
+          <img id="video" src="/video_feed" alt="Live stream" />
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+
+      <div class="panel" id="voteInfoView">
+        <div class="status-bar" id="countChips"></div>
+
+        <!-- Voting Phase Display -->
+        <div id="votingPhaseDisplay" class="voting-display" style="display: none;">
+          <div class="voting-question" id="votingQuestion"></div>
+          <div class="voting-answers-container">
+            <div class="answer-block" id="answerBlock1">
+              <div class="answer-text" id="answerText1"></div>
+              <div class="answer-count" id="answerCount1">0</div>
+            </div>
+            <div class="answer-block" id="answerBlock2">
+              <div class="answer-text" id="answerText2"></div>
+              <div class="answer-count" id="answerCount2">0</div>
+            </div>
+          </div>
+          <div class="voting-timer" id="votingTimer">Time left: 30s</div>
+        </div>
+
+        <!-- Pause Phase Display -->
+        <div id="pausePhaseDisplay" class="pause-display" style="display: none;">
+          <div class="pause-question" id="pauseQuestionText"></div>
+          <div class="pause-answers-grid">
+            <div class="pause-answer-item" id="pauseAnswer1">
+              <div class="pause-answer-label" id="pauseAnswer1Label"></div>
+              <div class="pause-answer-count" id="pauseAnswer1Count">0</div>
+            </div>
+            <div class="pause-answer-item" id="pauseAnswer2">
+              <div class="pause-answer-label" id="pauseAnswer2Label"></div>
+              <div class="pause-answer-count" id="pauseAnswer2Count">0</div>
+            </div>
+          </div>
+          <div class="pause-result-container">
+            <div class="pause-result-message" id="pauseResultMessage"></div>
+            <div class="pause-correct-wrong" id="pauseCorrectWrong"></div>
+          </div>
+          <div class="pause-accuracy-container" id="pauseAccuracyContainer" style="display: none;">
+            <div class="pause-accuracy-label" id="pauseAccuracyLabel">Recent accuracy:</div>
+            <div class="pause-accuracy-value" id="pauseAccuracyValue">0%</div>
+          </div>
+          <div class="pause-countdown" id="pauseCountdown">Next question in 10s</div>
+        </div>
+
+        <!-- Idle Phase Display -->
+        <div id="idlePhaseDisplay" class="idle-display">
+          <div class="status-bar" id="voteStats"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="countView">
+        <canvas id="countChart" height="80"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/web_count_and_vote.js" data-update-interval="250"></script>
+</body>
+</html>

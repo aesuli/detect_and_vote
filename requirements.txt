@@ -8,3 +8,4 @@ pillow
 six
 scipy
 cherrypy
+numpy

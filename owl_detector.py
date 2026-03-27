@@ -74,7 +74,14 @@ class OwlDetector(ABC):
         Returns:
             detections (list of dict): Each dict contains 'label', 'box', 'score'.
         """
-        texts = [self.objects]
+        # Snapshot mutable settings once so concurrent UI updates cannot desync
+        # text prompts from label mapping in the same inference pass.
+        objects = list(self.objects) if self.objects else []
+        if not objects:
+            return []
+        threshold = float(self.threshold)
+
+        texts = [objects]
         inputs = self.processor(images=frame, text=texts, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
@@ -85,14 +92,18 @@ class OwlDetector(ABC):
         results = self.processor.post_process_grounded_object_detection(
             outputs=outputs,
             target_sizes=target_sizes,
-            threshold=self.threshold
+            threshold=threshold
         )[0]
 
         boxes, scores, labels = results["boxes"], results["scores"], results["labels"]
         detections = []
         for box, score, label in zip(boxes, scores, labels):
+            label_idx = int(label.item())
+            if label_idx < 0 or label_idx >= len(objects):
+                # Defensive guard against transient or malformed label indices.
+                continue
             detections.append({
-                "label": self.objects[label.item()],
+                "label": objects[label_idx],
                 "box": [int(i) for i in box.tolist()],
                 "score": score.item()
             })

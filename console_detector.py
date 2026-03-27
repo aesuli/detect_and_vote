@@ -55,6 +55,8 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
     cap.set(3, frame_width)
     cap.set(4, frame_height)
 
+    THRESHOLD_STEP = 0.01
+
     frame_skip = 5
     frame_count = 0
     out = None
@@ -71,6 +73,13 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
             out = None
         else:
             print(f"Saving video to '{output_file}' at {use_fps:.2f} FPS, size {frame_width}x{frame_height}.")
+
+    print("\n=== Object Detection Started ===")
+    print(f"  Detector  : {detector_type} ({detector.model_name})")
+    print(f"  Objects   : {detector.objects}")
+    print(f"  Threshold : {detector.threshold:.2f}")
+    print("  Controls  : q quit | o change objects | +/. raise threshold | -/, lower threshold | h/? help")
+    print("================================\n")
 
     while True:
         ret, frame = cap.read()
@@ -91,8 +100,35 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
 
         cv2.imshow("Object Detection", frame_with_detections)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
+        elif key in (ord('o'), ord('O')):
+            print(f"\nCurrent objects: {detector.objects}")
+            raw = input("New objects (comma-separated), or Enter to keep: ").strip()
+            if raw:
+                new_objects = [item.strip() for item in raw.split(',') if item.strip()]
+                if new_objects:
+                    detector.set_objects(new_objects)
+                else:
+                    print("No valid objects parsed — keeping current list.")
+            else:
+                print("Keeping current list.")
+        elif key in (ord('+'), ord('.')):
+            new_thresh = min(1.0, round(detector.threshold + THRESHOLD_STEP, 2))
+            detector.set_threshold(new_thresh)
+        elif key in (ord('-'), ord(',')):
+            new_thresh = max(0.01, round(detector.threshold - THRESHOLD_STEP, 2))
+            detector.set_threshold(new_thresh)
+        elif key in (ord('h'), ord('H'), ord('?')):
+            print("\n=== Keyboard Controls ===")
+            print("  q        Quit")
+            print("  o        Show / change the object detection list")
+            print("  + or .   Raise detection threshold by 0.01")
+            print("  - or ,   Lower detection threshold by 0.01")
+            print("  h / ?    Show this help message")
+            print(f"  (current threshold: {detector.threshold:.2f})")
+            print("========================\n")
 
         frame_count += 1
 
@@ -104,7 +140,16 @@ def main(detector_type, model_name, objects, threshold, frame_width, frame_heigh
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Select detector type.')
+    parser = argparse.ArgumentParser(
+        description='Webcam object detector using OWL-ViT / OWLv2.\n\n'
+                     'Runtime keyboard controls (press while the detection window is focused):\n'
+                     '  q        Quit\n'
+                     '  o        Show / change the object detection list\n'
+                     '  + or .   Raise detection threshold by 0.01\n'
+                     '  - or ,   Lower detection threshold by 0.01\n'
+                     '  h / ?    Show keyboard controls help',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument('-d', '--detector', type=str, 
                         choices=['owlv2', 'owlvit'], default='owlvit',
                         help='Type of detector to use: owl2 or owlvit (default: owlvit)')
