@@ -893,10 +893,13 @@ async function saveSlotColors() {
 
 function updateVotingPhaseDisplay(votingData, slotCounts) {
   const votingPhaseDisplay = document.getElementById('votingPhaseDisplay');
+  const countdownPhaseDisplay = document.getElementById('countdownPhaseDisplay');
   const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
   const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
+  const votingTimer = document.getElementById('votingTimer');
 
   // Hide other displays
+  countdownPhaseDisplay.style.display = 'none';
   pausePhaseDisplay.style.display = 'none';
   idlePhaseDisplay.style.display = 'none';
   votingPhaseDisplay.style.display = 'block';
@@ -948,19 +951,54 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
     
     // Update timer
     const timeLeft = votingData.time_left_sec || 0;
-    document.getElementById('votingTimer').textContent = `Time left: ${timeLeft}s`;
+    votingTimer.textContent = `Time left: ${timeLeft}s`;
+    votingTimer.classList.toggle('urgent', timeLeft <= 5);
   }
+}
+
+function updateCountdownPhaseDisplay(votingData) {
+  const votingPhaseDisplay = document.getElementById('votingPhaseDisplay');
+  const countdownPhaseDisplay = document.getElementById('countdownPhaseDisplay');
+  const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
+  const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
+  const countChipsHost = document.getElementById('countChips');
+  const voteStatsHost = document.getElementById('voteStats');
+  const votingTimer = document.getElementById('votingTimer');
+
+  // Hide other displays
+  votingPhaseDisplay.style.display = 'none';
+  pausePhaseDisplay.style.display = 'none';
+  idlePhaseDisplay.style.display = 'none';
+  countdownPhaseDisplay.style.display = 'block';
+  if (countChipsHost) {
+    countChipsHost.style.display = 'none';
+  }
+  if (voteStatsHost) {
+    voteStatsHost.style.display = 'none';
+  }
+  if (votingTimer) {
+    votingTimer.classList.remove('urgent');
+  }
+
+  const countdownValue = Math.max(1, Math.ceil(Number(votingData.time_left_sec ?? 0)));
+  document.getElementById('countdownNumber').textContent = String(countdownValue);
 }
 
 function updatePausePhaseDisplay(votingData, slotCounts) {
   const votingPhaseDisplay = document.getElementById('votingPhaseDisplay');
+  const countdownPhaseDisplay = document.getElementById('countdownPhaseDisplay');
   const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
   const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
+  const votingTimer = document.getElementById('votingTimer');
 
   // Hide other displays
   votingPhaseDisplay.style.display = 'none';
+  countdownPhaseDisplay.style.display = 'none';
   idlePhaseDisplay.style.display = 'none';
   pausePhaseDisplay.style.display = 'block';
+  if (votingTimer) {
+    votingTimer.classList.remove('urgent');
+  }
 
   const lastResult = votingData.last_vote_result;
   if (lastResult) {
@@ -1035,33 +1073,45 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     }
     
     // Update countdown
-    const timeLeft = votingData.time_left_sec || 0;
+    const timeLeft = Number(votingData.time_left_sec ?? 0);
     document.getElementById('pauseCountdown').textContent = `Next question in ${timeLeft}s`;
   }
 }
 
 function updateVotingDisplay(votingData, slotCounts) {
   const votingPhaseDisplay = document.getElementById('votingPhaseDisplay');
+  const countdownPhaseDisplay = document.getElementById('countdownPhaseDisplay');
   const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
   const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
+  const votingTimer = document.getElementById('votingTimer');
 
   if (!votingData.active) {
     // Show idle display
     votingPhaseDisplay.style.display = 'none';
+    countdownPhaseDisplay.style.display = 'none';
     pausePhaseDisplay.style.display = 'none';
     idlePhaseDisplay.style.display = 'block';
+    if (votingTimer) {
+      votingTimer.classList.remove('urgent');
+    }
     return;
   }
 
-  if (votingData.phase === 'question') {
+  if (votingData.phase === 'countdown') {
+    updateCountdownPhaseDisplay(votingData);
+  } else if (votingData.phase === 'question') {
     updateVotingPhaseDisplay(votingData, slotCounts);
   } else if (votingData.phase === 'pause') {
     updatePausePhaseDisplay(votingData, slotCounts);
   } else {
     // Fallback to idle
     votingPhaseDisplay.style.display = 'none';
+    countdownPhaseDisplay.style.display = 'none';
     pausePhaseDisplay.style.display = 'none';
     idlePhaseDisplay.style.display = 'block';
+    if (votingTimer) {
+      votingTimer.classList.remove('urgent');
+    }
   }
 }
 
@@ -1072,11 +1122,13 @@ function refreshVoting(v) {
 
   const voteDurationInput = document.getElementById('voteDuration');
   const pauseDurationInput = document.getElementById('pauseDuration');
+  const preQuestionCountdownInput = document.getElementById('preQuestionCountdown');
   const rollingWindowInput = document.getElementById('rollingWindow');
   if (document.activeElement !== voteDurationInput) voteDurationInput.value = String(v.vote_duration_sec ?? voteDurationInput.value);
   if (document.activeElement !== pauseDurationInput) pauseDurationInput.value = String(v.pause_duration_sec ?? pauseDurationInput.value);
+  if (document.activeElement !== preQuestionCountdownInput) preQuestionCountdownInput.value = String(v.pre_question_countdown_sec ?? preQuestionCountdownInput.value);
   if (document.activeElement !== rollingWindowInput) rollingWindowInput.value = String(v.window_size ?? rollingWindowInput.value);
-  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.window_size || 0)}`;
+  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.pre_question_countdown_sec || 0)}|${Number(v.window_size || 0)}`;
 
   // Update voting display
   const slotCounts = state?.slot_counts || {};
@@ -1089,6 +1141,7 @@ function refreshVoting(v) {
     `<div class="chip">Accuracy: ${acc}</div>`,
     `<div class="chip">Scored votes: ${v.recent_scored_votes}</div>`,
   ].join('');
+  statHost.style.display = v.active ? 'none' : 'flex';
 }
 
 function readDetectorPayloadFromInputs() {
@@ -1200,19 +1253,21 @@ function queueDetectorSave() {
 function readVotingConfigPayloadFromInputs() {
   const voteDuration = Number(document.getElementById('voteDuration').value);
   const pauseDuration = Number(document.getElementById('pauseDuration').value);
+  const preQuestionCountdown = Number(document.getElementById('preQuestionCountdown').value);
   const windowSize = Number(document.getElementById('rollingWindow').value);
 
-  if (!Number.isFinite(voteDuration) || !Number.isFinite(pauseDuration) || !Number.isFinite(windowSize)) {
+  if (!Number.isFinite(voteDuration) || !Number.isFinite(pauseDuration) || !Number.isFinite(preQuestionCountdown) || !Number.isFinite(windowSize)) {
     return null;
   }
 
   const payload = {
     vote_duration_sec: Math.trunc(voteDuration),
     pause_duration_sec: Math.trunc(pauseDuration),
+    pre_question_countdown_sec: Math.trunc(preQuestionCountdown),
     window_size: Math.trunc(windowSize)
   };
 
-  if (payload.vote_duration_sec < 1 || payload.pause_duration_sec < 0 || payload.window_size < 1) {
+  if (payload.vote_duration_sec < 1 || payload.pause_duration_sec < 0 || payload.pre_question_countdown_sec < 0 || payload.window_size < 1) {
     return null;
   }
 
@@ -1220,7 +1275,7 @@ function readVotingConfigPayloadFromInputs() {
 }
 
 function getVotingConfigSignature(payload) {
-  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.window_size}`;
+  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.pre_question_countdown_sec}|${payload.window_size}`;
 }
 
 async function saveVotingConfigFromInputs() {
@@ -1453,7 +1508,7 @@ document.getElementById('thresholdInput').addEventListener('change', queueDetect
 document.getElementById('frameSkipInput').addEventListener('input', queueDetectorSave);
 document.getElementById('frameSkipInput').addEventListener('change', queueDetectorSave);
 
-['voteDuration', 'pauseDuration', 'rollingWindow'].forEach((id) => {
+['voteDuration', 'pauseDuration', 'preQuestionCountdown', 'rollingWindow'].forEach((id) => {
   const el = document.getElementById(id);
   el.addEventListener('input', queueVotingConfigSave);
   el.addEventListener('change', queueVotingConfigSave);

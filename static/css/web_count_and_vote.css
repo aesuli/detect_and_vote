@@ -36,7 +36,6 @@ body {
 }
 
 .panel-toggle-bar:hover,
-.panel-toggle-bar:focus-within,
 .panel-toggle-bar.is-open {
   transform: translateY(0);
 }
@@ -312,9 +311,40 @@ button:hover {
 
 /* Voting and Pause Display Styles */
 .voting-display,
+.countdown-display,
 .pause-display,
 .idle-display {
   margin-top: 16px;
+}
+
+.countdown-display {
+  min-height: 280px;
+  border: 1px solid #c8d3e6;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(19, 111, 99, 0.08), rgba(239, 71, 111, 0.08));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.countdown-label {
+  font-size: clamp(1.3rem, 2vw, 1.8rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.countdown-number {
+  font-size: clamp(4.5rem, 14vw, 10rem);
+  line-height: 1;
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--accent);
+  text-shadow: 0 10px 30px rgba(19, 111, 99, 0.28);
 }
 
 
@@ -375,6 +405,26 @@ button:hover {
   background: rgba(19, 111, 99, 0.1);
   border-radius: 10px;
   color: var(--accent);
+  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.voting-timer.urgent {
+  color: #b42318;
+  background: rgba(239, 71, 111, 0.16);
+  box-shadow: 0 0 0 1px rgba(180, 35, 24, 0.18), 0 10px 24px rgba(180, 35, 24, 0.16);
+  animation: voting-timer-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes voting-timer-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .voting-question,
@@ -525,4 +575,36 @@ button:hover {
     width: 100%;
     text-align: center;
   }
+}
+
+/* Footer */
+#site-footer {
+  position: fixed;
+  bottom: 10px;
+  right: 14px;
+  font-size: 13px;
+  color: #8a99b3;
+  z-index: 40;
+  white-space: nowrap;
+}
+
+#site-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#site-footer a:hover {
+  text-decoration: underline;
+}
+
+.footer-full {
+  display: none;
+}
+
+#site-footer:hover .footer-short {
+  display: none;
+}
+
+#site-footer:hover .footer-full {
+  display: inline;
 }

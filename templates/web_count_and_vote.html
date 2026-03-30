@@ -91,13 +91,15 @@
       <div class="row">
         <div>
           <label>Vote Timer (s)</label>
-          <input id="voteDuration" type="number" value="30" min="1" />
+          <input id="voteDuration" type="number" value="30" min="6" />
         </div>
         <div>
           <label>Pause (s)</label>
           <input id="pauseDuration" type="number" value="10" min="0" />
         </div>
       </div>
+      <label>Pre-question Countdown (s)</label>
+      <input id="preQuestionCountdown" type="number" value="3" min="0" />
       <label>Rolling Window</label>
       <input id="rollingWindow" type="number" value="50" min="1" />
       <div class="row">
@@ -139,6 +141,12 @@
           <div class="voting-timer" id="votingTimer">Time left: 30s</div>
         </div>
 
+        <!-- Pre-Question Countdown Display -->
+        <div id="countdownPhaseDisplay" class="countdown-display" style="display: none;">
+          <div class="countdown-label">Get ready</div>
+          <div class="countdown-number" id="countdownNumber">3</div>
+        </div>
+
         <!-- Pause Phase Display -->
         <div id="pausePhaseDisplay" class="pause-display" style="display: none;">
           <div class="pause-question" id="pauseQuestionText"></div>
@@ -174,7 +182,10 @@
       </div>
     </div>
   </div>
-
+  <footer id="site-footer">
+    <span class="footer-short">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://www.cnr.it/">CNR</a></span>
+    <span class="footer-full">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://hlt-isti.github.io/">AI4Text</a> / <a href="https://aimh.isti.cnr.it/">AIMH</a> / <a href="https://www.isti.cnr.it/">ISTI</a> / <a href="https://www.cnr.it/">CNR</a></span>
+  </footer>
   <script src="/static/js/web_count_and_vote.js" data-update-interval="250"></script>
 </body>
 </html>

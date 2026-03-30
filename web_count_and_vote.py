@@ -2,6 +2,7 @@ import os
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
 import json
+import math
 import random
 import threading
 import time
@@ -21,6 +22,7 @@ class ObjectDetectionApp:
 
     DEFAULT_VOTE_DURATION_SEC = 30
     DEFAULT_PAUSE_DURATION_SEC = 10
+    DEFAULT_PRE_QUESTION_COUNTDOWN_SEC = 3
     DEFAULT_VOTE_WINDOW_SIZE = 50
 
     def __init__(self, questions_path: str = "questions.json"):
@@ -61,11 +63,12 @@ class ObjectDetectionApp:
 
         self.vote_duration_sec = self.DEFAULT_VOTE_DURATION_SEC
         self.pause_duration_sec = self.DEFAULT_PAUSE_DURATION_SEC
+        self.pre_question_countdown_sec = self.DEFAULT_PRE_QUESTION_COUNTDOWN_SEC
         self.vote_window_size = self.DEFAULT_VOTE_WINDOW_SIZE
         self.vote_results = deque(maxlen=self.vote_window_size)
 
         self.voting_active = False
-        self.voting_phase = "idle"  # idle | question | pause
+        self.voting_phase = "idle"  # idle | countdown | question | pause
         self.phase_end_ts = 0.0
         self.current_question: Optional[Dict] = None
         self.last_vote_result: Optional[Dict] = None
@@ -171,12 +174,18 @@ class ObjectDetectionApp:
             continue
           correct_answer = str(item["correct_answer"]).strip() if item.get("correct_answer") else None
           more_info = str(item["more_info"]).strip() if item.get("more_info") else None
+          try:
+            extra_time = int(item.get("extra_time", 0))
+          except (TypeError, ValueError):
+            extra_time = 0
+          extra_time = max(0, extra_time)
 
           normalized.append(
             {
               "id": id,
               "question": question,
               "answers": [a0, a1],
+              "extra_time": extra_time,
               "correct_answer": correct_answer,
               "more_info": more_info,
             }
@@ -418,6 +427,22 @@ class ObjectDetectionApp:
             "is_correct": is_correct,
         }
 
+    def _question_extra_time_sec(self, question: Optional[Dict]) -> int:
+        if not question:
+            return 0
+        try:
+            return max(0, int(question.get("extra_time", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    def _start_question_phase_locked(self):
+        if not self.current_question:
+            self._stop_voting_locked(clear_last_result=False)
+            return
+        total_duration = max(6, self.vote_duration_sec + self._question_extra_time_sec(self.current_question))
+        self.voting_phase = "question"
+        self.phase_end_ts = time.time() + total_duration
+
     def _start_next_question_locked(self):
         q = self._next_question()
         if not q:
@@ -425,8 +450,12 @@ class ObjectDetectionApp:
             return
 
         self.current_question = self._build_active_question(q)
-        self.voting_phase = "question"
-        self.phase_end_ts = time.time() + self.vote_duration_sec
+        if self.pre_question_countdown_sec > 0:
+            self.voting_phase = "countdown"
+            self.phase_end_ts = time.time() + self.pre_question_countdown_sec
+            return
+
+        self._start_question_phase_locked()
 
     def _tick_voting_locked(self):
         if not self.voting_active:
@@ -442,12 +471,17 @@ class ObjectDetectionApp:
             self.phase_end_ts = now + self.pause_duration_sec
             return
 
+        if self.voting_phase == "countdown":
+            self._start_question_phase_locked()
+            return
+
         if self.voting_phase == "pause":
             self._start_next_question_locked()
 
-    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, window_size: int):
+    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, pre_question_countdown: int, window_size: int):
         self.vote_duration_sec = vote_duration
         self.pause_duration_sec = pause_duration
+        self.pre_question_countdown_sec = pre_question_countdown
         if window_size != self.vote_window_size:
             self.vote_window_size = window_size
             self.vote_results = deque(list(self.vote_results), maxlen=self.vote_window_size)
@@ -542,7 +576,7 @@ class ObjectDetectionApp:
         now = time.time()
         time_left = 0
         if self.voting_active and self.phase_end_ts > now:
-            time_left = int(max(0, self.phase_end_ts - now))
+            time_left = max(0, int(math.ceil(self.phase_end_ts - now)))
 
         accuracy = None
         if len(self.vote_results) > 0:
@@ -554,6 +588,7 @@ class ObjectDetectionApp:
             "time_left_sec": time_left,
             "vote_duration_sec": self.vote_duration_sec,
             "pause_duration_sec": self.pause_duration_sec,
+            "pre_question_countdown_sec": self.pre_question_countdown_sec,
             "window_size": self.vote_window_size,
             "recent_scored_votes": len(self.vote_results),
             "accuracy_percent": accuracy,
@@ -783,17 +818,20 @@ class ObjectDetectionApp:
         try:
             vote_duration = int(payload.get("vote_duration_sec", self.vote_duration_sec))
             pause_duration = int(payload.get("pause_duration_sec", self.pause_duration_sec))
+            pre_question_countdown = int(payload.get("pre_question_countdown_sec", self.pre_question_countdown_sec))
             window_size = int(payload.get("window_size", self.vote_window_size))
 
-            if vote_duration < 1:
-                raise ValueError("vote_duration_sec must be >= 1")
+            if vote_duration <= 5:
+                raise ValueError("vote_duration_sec must be > 5")
             if pause_duration < 0:
                 raise ValueError("pause_duration_sec must be >= 0")
+            if pre_question_countdown < 0:
+                raise ValueError("pre_question_countdown_sec must be >= 0")
             if window_size < 1:
                 raise ValueError("window_size must be >= 1")
 
             with self.lock:
-              self._set_voting_config_locked(vote_duration, pause_duration, window_size)
+                self._set_voting_config_locked(vote_duration, pause_duration, pre_question_countdown, window_size)
 
             return {"status": "success", "message": "Voting configuration updated."}
         except Exception as exc:
