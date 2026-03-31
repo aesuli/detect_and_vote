@@ -20,6 +20,8 @@ from owl_detector import Owlv2Detector, OwlViTDetector
 class ObjectDetectionApp:
     """CherryPy app for detection, region counting, and quiz voting."""
 
+    REGION_SLOT_VOTING_MODE = "region_slots"
+    OBJECT_LIST_VOTING_MODE = "object_lists"
     DEFAULT_VOTE_DURATION_SEC = 30
     DEFAULT_PAUSE_DURATION_SEC = 10
     DEFAULT_PRE_QUESTION_COUNTDOWN_SEC = 3
@@ -28,7 +30,10 @@ class ObjectDetectionApp:
     def __init__(self, questions_path: str = "questions.json"):
         self.detector_type = "owlvit"
         self.model_name = None
-        self.objects = ["a person"]
+        self.voting_mode = self.REGION_SLOT_VOTING_MODE
+        self.region_vote_objects = ["a person"]
+        self.answer_objects: Dict[int, List[str]] = {1: ["the palm of a hand"], 2: ["a hand closed in a fist"]}
+        self.objects = list(self.region_vote_objects)
         self.threshold = 0.15
         self.frame_width = 960
         self.frame_height = 540
@@ -193,6 +198,76 @@ class ObjectDetectionApp:
 
         return normalized
 
+    def _normalize_voting_mode(self, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized == self.OBJECT_LIST_VOTING_MODE:
+            return self.OBJECT_LIST_VOTING_MODE
+        return self.REGION_SLOT_VOTING_MODE
+
+    def _normalize_object_list(self, value: Any) -> List[str]:
+        if isinstance(value, str):
+            items = value.splitlines()
+        elif isinstance(value, (list, tuple, set)):
+            items = list(value)
+        else:
+            items = []
+
+        cleaned = []
+        seen = set()
+        for item in items:
+            label = str(item or "").strip()
+            if not label:
+                continue
+            key = label.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(label)
+        return cleaned
+
+    def _normalize_answer_object_lists(self, value: Any) -> Dict[int, List[str]]:
+        if isinstance(value, dict):
+            raw_slot_1 = value.get("1", value.get(1, []))
+            raw_slot_2 = value.get("2", value.get(2, []))
+        elif isinstance(value, (list, tuple)) and len(value) >= 2:
+            raw_slot_1 = value[0]
+            raw_slot_2 = value[1]
+        else:
+            raw_slot_1 = []
+            raw_slot_2 = []
+
+        slot_1 = self._normalize_object_list(raw_slot_1)
+        slot_2 = self._normalize_object_list(raw_slot_2)
+
+        overlap = {label.casefold() for label in slot_1}.intersection(label.casefold() for label in slot_2)
+        if overlap:
+            raise ValueError("Answer 1 and Answer 2 object lists must not contain the same object.")
+
+        return {1: slot_1, 2: slot_2}
+
+    def _active_detector_objects(self, voting_mode: str, region_vote_objects: List[str], answer_objects: Dict[int, List[str]]) -> List[str]:
+        if voting_mode == self.OBJECT_LIST_VOTING_MODE:
+            merged = []
+            seen = set()
+            for slot in (1, 2):
+                for label in answer_objects.get(slot, []):
+                    key = label.casefold()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    merged.append(label)
+            return merged
+        return list(region_vote_objects)
+
+    def _detected_label_vote_slot_locked(self, label: Any) -> Optional[int]:
+        normalized = str(label or "").strip().casefold()
+        if not normalized:
+            return None
+        for slot in (1, 2):
+            if normalized in {item.casefold() for item in self.answer_objects.get(slot, [])}:
+                return slot
+        return None
+
     def _ensure_question_order(self):
         if not self.questions:
             self.question_order = []
@@ -352,18 +427,31 @@ class ObjectDetectionApp:
                 "box": det["box"],
                 "score": det["score"],
                 "region_id": None,
+                "vote_slot": None,
+                "vote_display_name": None,
+                "counted": False,
+                "assignment_reason": "outside_vote_area",
                 "region_answer_slot": None,
                 "region_display_name": None,
                 "region_score": 0.0,
             }
             if best_region is not None and best_score > 0:
-                answer_slot = self._region_answer_slot(best_region)
+                if self.voting_mode == self.OBJECT_LIST_VOTING_MODE:
+                    answer_slot = self._detected_label_vote_slot_locked(det["label"])
+                    assigned["assignment_reason"] = "label_not_mapped" if answer_slot is None else "counted"
+                else:
+                    answer_slot = self._region_answer_slot(best_region)
+                    assigned["assignment_reason"] = "counted"
                 assigned["region_id"] = best_region["id"]
-                assigned["region_answer_slot"] = answer_slot
-                assigned["region_display_name"] = self._answer_slot_name_locked(answer_slot)
                 assigned["region_score"] = round(best_score, 4)
-                region_counts[best_region["id"]] += 1
-                slot_counts[answer_slot] = slot_counts.get(answer_slot, 0) + 1
+                if answer_slot in (1, 2):
+                    assigned["vote_slot"] = answer_slot
+                    assigned["vote_display_name"] = self._answer_slot_name_locked(answer_slot)
+                    assigned["counted"] = True
+                    assigned["region_answer_slot"] = answer_slot
+                    assigned["region_display_name"] = assigned["vote_display_name"]
+                    region_counts[best_region["id"]] += 1
+                    slot_counts[answer_slot] = slot_counts.get(answer_slot, 0) + 1
 
             assignments.append(assigned)
 
@@ -372,8 +460,9 @@ class ObjectDetectionApp:
     def _render_detections(self, frame: np.ndarray, assignments: List[Dict]) -> np.ndarray:
         for det in assignments:
             x1, y1, x2, y2 = det["box"]
-            assigned_text = det["region_display_name"] if det["region_display_name"] else "unassigned"
-            color = self._slot_color_bgr_locked(det["region_answer_slot"]) if det["region_answer_slot"] else (120, 120, 120)
+            assigned_text = det.get("vote_display_name") or det.get("region_display_name") or det.get("assignment_reason") or "unassigned"
+            vote_slot = det.get("vote_slot", det.get("region_answer_slot"))
+            color = self._slot_color_bgr_locked(vote_slot) if vote_slot else (120, 120, 120)
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             caption = f"{det['label']} {det['score']:.2f} -> {assigned_text}"
             cv2.putText(
@@ -622,6 +711,12 @@ class ObjectDetectionApp:
                 "model_name": self.model_name,
                 "threshold": self.threshold,
                 "objects": self.objects,
+                "region_objects": self.region_vote_objects,
+                "answer_objects": {
+                    "1": list(self.answer_objects.get(1, [])),
+                    "2": list(self.answer_objects.get(2, [])),
+                },
+                "voting_mode": self.voting_mode,
                 "frame_skip": self.frame_skip,
             },
             "regions": self.regions,
@@ -697,33 +792,46 @@ class ObjectDetectionApp:
         try:
             detector = payload.get("detector", self.detector_type)
             model_name = payload.get("model_name", self.model_name)
-            objects = payload.get("objects", self.objects)
+            voting_mode = self._normalize_voting_mode(payload.get("voting_mode", self.voting_mode))
+            region_vote_objects = self._normalize_object_list(payload.get("region_objects", payload.get("objects", self.region_vote_objects)))
+            answer_objects = self._normalize_answer_object_lists(payload.get("answer_objects", self.answer_objects))
             threshold = float(payload.get("threshold", self.threshold))
             frame_skip = int(payload.get("frame_skip", self.frame_skip))
-
-            if not isinstance(objects, list) or not objects:
-                raise ValueError("'objects' must be a non-empty list")
 
             if frame_skip < 1:
                 raise ValueError("'frame_skip' must be >= 1")
 
-            objects = [str(x).strip() for x in objects if str(x).strip()]
-            if not objects:
-                raise ValueError("No valid objects provided")
+            if voting_mode == self.OBJECT_LIST_VOTING_MODE:
+                if not answer_objects.get(1) or not answer_objects.get(2):
+                    raise ValueError("Provide at least one object for both Answer 1 and Answer 2 in object-list mode.")
+            elif not region_vote_objects:
+                raise ValueError("Provide at least one detector object in region-based mode.")
+
+            active_objects = self._active_detector_objects(voting_mode, region_vote_objects, answer_objects)
+            if not active_objects:
+                raise ValueError("No valid detection objects provided.")
 
             with self.lock:
                 model_reload = detector != self.detector_type or model_name != self.model_name
                 self.detector_type = detector
                 self.model_name = model_name
-                self.objects = objects
+                self.voting_mode = voting_mode
+                self.region_vote_objects = region_vote_objects
+                self.answer_objects = {
+                    1: list(answer_objects.get(1, [])),
+                    2: list(answer_objects.get(2, [])),
+                }
+                self.objects = active_objects
                 self.threshold = threshold
                 self.frame_skip = frame_skip
 
                 if model_reload:
                     self._initialize_detector()
                 elif self.detector is not None:
-                    self.detector.set_objects(objects)
+                    self.detector.set_objects(active_objects)
                     self.detector.set_threshold(threshold)
+                else:
+                    self._initialize_detector()
 
             return {"status": "success", "message": "Detector settings applied."}
         except Exception as exc:

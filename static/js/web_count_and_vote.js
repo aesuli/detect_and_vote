@@ -207,6 +207,67 @@ function getSlotColor(slot) {
   return slotColors[normalizedSlot] || (normalizedSlot === 1 ? '#0066cc' : '#ffcc00');
 }
 
+function getVotingMode() {
+  return document.getElementById('votingMode')?.value || state?.detector?.voting_mode || 'region_slots';
+}
+
+function isObjectListVotingMode() {
+  return getVotingMode() === 'object_lists';
+}
+
+function parseTextareaList(value) {
+  return String(value ?? '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function getObjectListSignature(items) {
+  return items.map((item) => item.toLowerCase()).join('\n');
+}
+
+function describeAssignment(det) {
+  if (det.vote_display_name) return det.vote_display_name;
+  if (det.region_display_name) return det.region_display_name;
+  if (det.assignment_reason === 'outside_vote_area') return 'outside vote area';
+  if (det.assignment_reason === 'label_not_mapped') return 'no answer match';
+  return 'unassigned';
+}
+
+function getRegionColor(region, index, isSelected = false) {
+  if (isObjectListVotingMode()) {
+    return isSelected ? '#136f63' : '#6d7a92';
+  }
+  return getSlotColor(region.answer_slot || ((index % 2) + 1));
+}
+
+function updateVotingModeUi(mode = getVotingMode()) {
+  const isObjectMode = mode === 'object_lists';
+  const votingModeInput = document.getElementById('votingMode');
+  const regionObjectsGroup = document.getElementById('regionObjectsGroup');
+  const answerObjectsGroup = document.getElementById('answerObjectsGroup');
+  const regionAnswerSlotGroup = document.getElementById('regionAnswerSlotGroup');
+  const regionsModeHint = document.getElementById('regionsModeHint');
+
+  if (votingModeInput && votingModeInput.value !== mode) {
+    votingModeInput.value = mode;
+  }
+  if (regionObjectsGroup) {
+    regionObjectsGroup.classList.toggle('config-hidden', isObjectMode);
+  }
+  if (answerObjectsGroup) {
+    answerObjectsGroup.classList.toggle('config-hidden', !isObjectMode);
+  }
+  if (regionAnswerSlotGroup) {
+    regionAnswerSlotGroup.classList.toggle('config-hidden', isObjectMode);
+  }
+  if (regionsModeHint) {
+    regionsModeHint.textContent = isObjectMode
+      ? 'In object-list mode regions only define where detections are allowed to count as votes.'
+      : 'In region-based mode each region is assigned to an answer.';
+  }
+}
+
 function resizeCanvas() {
   const rect = video.getBoundingClientRect();
   const wrapRect = videoWrap.getBoundingClientRect();
@@ -703,8 +764,9 @@ function drawDetections() {
     const dy = Math.min(dy1, dy2);
     const dw = Math.abs(dx2 - dx1);
     const dh = Math.abs(dy2 - dy1);
-    const color = det.region_answer_slot ? getSlotColor(det.region_answer_slot) : '#b9c0ce';
-    const assignedText = det.region_display_name || 'unassigned';
+    const voteSlot = Number((det.vote_slot ?? det.region_answer_slot) || 0);
+    const color = voteSlot ? getSlotColor(voteSlot) : '#b9c0ce';
+    const assignedText = describeAssignment(det);
     const caption = showDetectionLabel
       ? `${det.label} ${Number(det.score || 0).toFixed(2)} -> ${assignedText}`
       : assignedText;
@@ -736,7 +798,7 @@ function drawOverlay() {
   drawDetections();
   regions.forEach((r, index) => {
     const isSelected = Number(r.id) === Number(selectedRegionId);
-    drawPolygon(r.points, getSlotColor(r.answer_slot || ((index % 2) + 1)), false, isSelected);
+    drawPolygon(r.points, getRegionColor(r, index, isSelected), false, isSelected);
   });
 }
 
@@ -753,8 +815,10 @@ function refreshRegionList() {
   }
   host.innerHTML = regions.map((r) => {
     const cls = Number(r.id) === Number(selectedRegionId) ? 'region-item selected' : 'region-item';
-    const slotName = getAnswerSlotName(r.answer_slot || 1);
-    return `<div class="${cls}" data-id="${r.id}">#${r.id} <b>${slotName}</b> (${r.criterion}) - ${r.points.length} pts</div>`;
+    const slotMeta = isObjectListVotingMode()
+      ? 'Vote area'
+      : getAnswerSlotName(r.answer_slot || 1);
+    return `<div class="${cls}" data-id="${r.id}">#${r.id} <b>${slotMeta}</b><span class="region-meta">${r.criterion} - ${r.points.length} pts</span></div>`;
   }).join('');
   Array.from(host.querySelectorAll('.region-item')).forEach((el) => {
     el.addEventListener('click', () => {
@@ -1116,7 +1180,8 @@ function updateVotingDisplay(votingData, slotCounts) {
 }
 
 function refreshVoting(v) {
-  document.getElementById('modeLabel').textContent = 'Mode: ' + (v.active ? 'voting' : 'counting');
+  const mappingModeLabel = getVotingMode() === 'object_lists' ? 'object lists' : 'region slots';
+  document.getElementById('modeLabel').textContent = `Mode: ${v.active ? 'voting' : 'counting'} / ${mappingModeLabel}`;
   const countChipsHost = document.getElementById('countChips');
   countChipsHost.style.display = v.active ? 'none' : 'flex';
 
@@ -1144,43 +1209,113 @@ function refreshVoting(v) {
   statHost.style.display = v.active ? 'none' : 'flex';
 }
 
-function readDetectorPayloadFromInputs() {
+function readDetectorDraftFromInputs() {
+  const votingMode = document.getElementById('votingMode').value || 'region_slots';
   const detector = document.getElementById('detectorType').value;
-  const objects = document.getElementById('objectsInput').value
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const regionObjects = parseTextareaList(document.getElementById('objectsInput').value);
+  const answer1Objects = parseTextareaList(document.getElementById('answer1ObjectsInput').value);
+  const answer2Objects = parseTextareaList(document.getElementById('answer2ObjectsInput').value);
   const threshold = Number(document.getElementById('thresholdInput').value);
   const frameSkip = Number(document.getElementById('frameSkipInput').value);
 
-  if (!detector || !Number.isFinite(threshold) || !Number.isFinite(frameSkip) || !objects.length) {
+  if (!detector) {
     return null;
   }
 
-  const frameSkipInt = Math.trunc(frameSkip);
-  if (frameSkipInt < 1) {
-    return null;
-  }
-
-  return { detector, objects, threshold, frame_skip: frameSkipInt };
+  return {
+    detector,
+    voting_mode: votingMode,
+    region_objects: regionObjects,
+    answer_objects: {
+      1: answer1Objects,
+      2: answer2Objects,
+    },
+    threshold,
+    frame_skip: Math.trunc(frameSkip),
+  };
 }
 
 function getDetectorSignature(payload) {
-  return `${payload.detector}|${payload.threshold}|${payload.frame_skip}|${payload.objects.join('\\n')}`;
+  return [
+    payload.detector,
+    payload.voting_mode,
+    payload.threshold,
+    payload.frame_skip,
+    getObjectListSignature(payload.region_objects || []),
+    getObjectListSignature(payload.answer_objects?.[1] || payload.answer_objects?.['1'] || []),
+    getObjectListSignature(payload.answer_objects?.[2] || payload.answer_objects?.['2'] || []),
+  ].join('|');
+}
+
+function isValidDetectorPayload(payload) {
+  if (!payload || !payload.detector || !Number.isFinite(payload.threshold) || !Number.isFinite(payload.frame_skip) || payload.frame_skip < 1) {
+    return false;
+  }
+
+  if (payload.voting_mode === 'object_lists') {
+    const answer1Objects = payload.answer_objects?.[1] || payload.answer_objects?.['1'] || [];
+    const answer2Objects = payload.answer_objects?.[2] || payload.answer_objects?.['2'] || [];
+    if (!answer1Objects.length || !answer2Objects.length) {
+      return false;
+    }
+    const overlap = new Set(answer1Objects.map((item) => item.toLowerCase()));
+    if (answer2Objects.some((item) => overlap.has(item.toLowerCase()))) {
+      return false;
+    }
+    return true;
+  }
+
+  return Array.isArray(payload.region_objects) && payload.region_objects.length > 0;
 }
 
 function syncDetectorInputsFromState(nextState) {
   if (!nextState || !nextState.detector) return;
+  const votingModeInput = document.getElementById('votingMode');
   const detectorTypeInput = document.getElementById('detectorType');
   const objectsInput = document.getElementById('objectsInput');
+  const answer1ObjectsInput = document.getElementById('answer1ObjectsInput');
+  const answer2ObjectsInput = document.getElementById('answer2ObjectsInput');
   const thresholdInput = document.getElementById('thresholdInput');
   const frameSkipInput = document.getElementById('frameSkipInput');
 
+  const serverPayload = {
+    detector: nextState.detector.type || detectorTypeInput.value,
+    voting_mode: nextState.detector.voting_mode || votingModeInput.value || 'region_slots',
+    region_objects: Array.isArray(nextState.detector.region_objects) ? nextState.detector.region_objects : [],
+    answer_objects: {
+      1: Array.isArray(nextState.detector.answer_objects?.['1']) ? nextState.detector.answer_objects['1'] : [],
+      2: Array.isArray(nextState.detector.answer_objects?.['2']) ? nextState.detector.answer_objects['2'] : [],
+    },
+    threshold: Number(nextState.detector.threshold ?? thresholdInput.value),
+    frame_skip: Math.trunc(Number(nextState.detector.frame_skip ?? frameSkipInput.value)),
+  };
+  const serverSignature = getDetectorSignature(serverPayload);
+  if (isValidDetectorPayload(serverPayload)) {
+    lastDetectorSignature = serverSignature;
+  }
+
+  const localDraft = readDetectorDraftFromInputs();
+  const localSignature = localDraft ? getDetectorSignature(localDraft) : null;
+  const detectorConfigDirty = !!(localSignature && localSignature !== lastDetectorSignature);
+  if (detectorConfigDirty) {
+    updateVotingModeUi();
+    return;
+  }
+
+  if (document.activeElement !== votingModeInput) {
+    votingModeInput.value = nextState.detector.voting_mode || votingModeInput.value;
+  }
   if (document.activeElement !== detectorTypeInput) {
     detectorTypeInput.value = nextState.detector.type || detectorTypeInput.value;
   }
   if (document.activeElement !== objectsInput) {
-    objectsInput.value = (nextState.detector.objects || []).join('\n');
+    objectsInput.value = (nextState.detector.region_objects || []).join('\n');
+  }
+  if (document.activeElement !== answer1ObjectsInput) {
+    answer1ObjectsInput.value = (nextState.detector.answer_objects?.['1'] || []).join('\n');
+  }
+  if (document.activeElement !== answer2ObjectsInput) {
+    answer2ObjectsInput.value = (nextState.detector.answer_objects?.['2'] || []).join('\n');
   }
   if (document.activeElement !== thresholdInput) {
     thresholdInput.value = String(nextState.detector.threshold ?? thresholdInput.value);
@@ -1188,21 +1323,12 @@ function syncDetectorInputsFromState(nextState) {
   if (document.activeElement !== frameSkipInput) {
     frameSkipInput.value = String(nextState.detector.frame_skip ?? frameSkipInput.value);
   }
-
-  const payload = {
-    detector: nextState.detector.type || detectorTypeInput.value,
-    objects: Array.isArray(nextState.detector.objects) ? nextState.detector.objects : [],
-    threshold: Number(nextState.detector.threshold ?? thresholdInput.value),
-    frame_skip: Math.trunc(Number(nextState.detector.frame_skip ?? frameSkipInput.value)),
-  };
-  if (payload.detector && Number.isFinite(payload.threshold) && Number.isFinite(payload.frame_skip) && payload.frame_skip >= 1 && payload.objects.length) {
-    lastDetectorSignature = getDetectorSignature(payload);
-  }
+  updateVotingModeUi(nextState.detector.voting_mode || votingModeInput.value);
 }
 
 async function saveDetectorFromInputs() {
-  const payload = readDetectorPayloadFromInputs();
-  if (!payload) {
+  const payload = readDetectorDraftFromInputs();
+  if (!isValidDetectorPayload(payload)) {
     return;
   }
 
@@ -1458,7 +1584,9 @@ async function updateSelectedRegionFromControls(message) {
   }
   const answerSlot = Number(document.getElementById('regionAnswerSlot').value || '1');
   const criterion = document.getElementById('regionCriterion').value;
-  region.answer_slot = answerSlot;
+  if (!isObjectListVotingMode()) {
+    region.answer_slot = answerSlot;
+  }
   region.criterion = criterion;
   markRegionsDirty();
   refreshRegionList();
@@ -1500,9 +1628,19 @@ document.getElementById('deleteSelectedRegion').onclick = async () => {
   await persistRegions('Selected region deleted.');
 };
 
+document.getElementById('votingMode').addEventListener('change', () => {
+  updateVotingModeUi();
+  refreshRegionList();
+  drawOverlay();
+  queueDetectorSave();
+});
 document.getElementById('detectorType').addEventListener('change', queueDetectorSave);
 document.getElementById('objectsInput').addEventListener('input', queueDetectorSave);
 document.getElementById('objectsInput').addEventListener('change', queueDetectorSave);
+document.getElementById('answer1ObjectsInput').addEventListener('input', queueDetectorSave);
+document.getElementById('answer1ObjectsInput').addEventListener('change', queueDetectorSave);
+document.getElementById('answer2ObjectsInput').addEventListener('input', queueDetectorSave);
+document.getElementById('answer2ObjectsInput').addEventListener('change', queueDetectorSave);
 document.getElementById('thresholdInput').addEventListener('input', queueDetectorSave);
 document.getElementById('thresholdInput').addEventListener('change', queueDetectorSave);
 document.getElementById('frameSkipInput').addEventListener('input', queueDetectorSave);
@@ -1563,6 +1701,7 @@ initializeMirrorViewControl();
 initializeUpdateIntervalControl();
 initializePanelVisibilityControls();
 initializePanelToolbarAutoHide();
+updateVotingModeUi();
 
 async function loop() {
   try {

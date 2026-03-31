@@ -189,6 +189,17 @@ button:hover {
   margin: 0;
 }
 
+.hint-text {
+  margin: -2px 0 10px 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #5b677d;
+}
+
+.config-hidden {
+  display: none !important;
+}
+
 .mono {
   font-family: 'IBM Plex Mono', monospace;
 }
@@ -307,6 +318,13 @@ button:hover {
 .region-item.selected {
   border-color: #136f63;
   background: #e8f7f4;
+}
+
+.region-item .region-meta {
+  display: block;
+  margin-top: 2px;
+  color: #5b677d;
+  font-size: 0.8rem;
 }
 
 /* Voting and Pause Display Styles */
@@ -562,6 +580,10 @@ button:hover {
 }
 
 @media (max-width: 720px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+
   .panel-toggle-bar {
     right: 8px;
     width: min(calc(100vw - 16px), 520px);
