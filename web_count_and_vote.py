@@ -32,7 +32,7 @@ class ObjectDetectionApp:
         self.model_name = None
         self.voting_mode = self.REGION_SLOT_VOTING_MODE
         self.region_vote_objects = ["a person"]
-        self.answer_objects: Dict[int, List[str]] = {1: ["the palm of a hand"], 2: ["a hand closed in a fist"]}
+        self.answer_objects: Dict[int, List[str]] = {1: ["the palm of an open hand"], 2: ["a hand closed in a fist"]}
         self.objects = list(self.region_vote_objects)
         self.threshold = 0.15
         self.frame_width = 960

@@ -222,6 +222,29 @@ function parseTextareaList(value) {
     .filter(Boolean);
 }
 
+function ensureObjectListDefaultsInInputs() {
+  const answer1Input = document.getElementById('answer1ObjectsInput');
+  const answer2Input = document.getElementById('answer2ObjectsInput');
+  if (!answer1Input || !answer2Input) {
+    return;
+  }
+
+  const currentAnswer1 = parseTextareaList(answer1Input.value);
+  const currentAnswer2 = parseTextareaList(answer2Input.value);
+  const stateAnswer1 = parseTextareaList(state?.detector?.answer_objects?.['1'] || []);
+  const stateAnswer2 = parseTextareaList(state?.detector?.answer_objects?.['2'] || []);
+
+  const defaultAnswer1 = stateAnswer1.length ? stateAnswer1 : ['the palm of an open hand'];
+  const defaultAnswer2 = stateAnswer2.length ? stateAnswer2 : ['a hand closed in a fist'];
+
+  if (!currentAnswer1.length) {
+    answer1Input.value = defaultAnswer1.join('\n');
+  }
+  if (!currentAnswer2.length) {
+    answer2Input.value = defaultAnswer2.join('\n');
+  }
+}
+
 function getObjectListSignature(items) {
   return items.map((item) => item.toLowerCase()).join('\n');
 }
@@ -1629,6 +1652,9 @@ document.getElementById('deleteSelectedRegion').onclick = async () => {
 };
 
 document.getElementById('votingMode').addEventListener('change', () => {
+  if (isObjectListVotingMode()) {
+    ensureObjectListDefaultsInInputs();
+  }
   updateVotingModeUi();
   refreshRegionList();
   drawOverlay();
