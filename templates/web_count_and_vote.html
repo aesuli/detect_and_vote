@@ -125,14 +125,20 @@
       <input id="preQuestionCountdown" type="number" value="3" min="0" />
       <label>Rolling Window</label>
       <input id="rollingWindow" type="number" value="50" min="1" />
+      <div class="toggle-line">
+        <input id="shuffleAnswers" type="checkbox" checked />
+        <label for="shuffleAnswers">Shuffle answers</label>
+      </div>
       <div class="row">
         <button class="btn-primary" id="startVoting">Start Voting</button>
         <button class="btn-danger" id="stopVoting">Stop Voting</button>
       </div>
 
-      <label>Question Pool JSON</label>
-      <textarea id="questionsJson" rows="6" placeholder='[{"question":"...","answers":["A","B"],"correct_answer":"A"}]'></textarea>
-      <button id="loadQuestions">Load Questions JSON</button>
+      <label>Question Files</label>
+      <div class="list question-source-list" id="questionSources">Loading files...</div>
+      <label for="questionsFile">Upload Additional Questions (.jsonl/.json)</label>
+      <input id="questionsFile" type="file" accept=".jsonl,.json,application/json" />
+      <button id="loadQuestions">Load Selected Question Sources</button>
 
       <div id="flash" class="chip" style="margin-top:8px;">Ready</div>
     </div>

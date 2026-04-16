@@ -4,6 +4,7 @@ os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 import json
 import math
 import random
+import re
 import threading
 import time
 from collections import deque
@@ -27,7 +28,7 @@ class ObjectDetectionApp:
     DEFAULT_PRE_QUESTION_COUNTDOWN_SEC = 3
     DEFAULT_VOTE_WINDOW_SIZE = 50
 
-    def __init__(self, questions_path: str = "questions.json"):
+    def __init__(self, questions_path: str = os.path.join("data", "test.jsonl")):
         self.detector_type = "owlvit"
         self.model_name = None
         self.voting_mode = self.REGION_SLOT_VOTING_MODE
@@ -61,8 +62,10 @@ class ObjectDetectionApp:
         self.slot_colors: Dict[int, str] = {1: "#0066cc", 2: "#ffcc00"}
         self.count_history = deque(maxlen=600)
 
-        self.questions_path = questions_path
-        self.questions = self._load_questions(questions_path)
+        self.app_root = os.path.dirname(os.path.abspath(__file__))
+        self.data_dir = os.path.join(self.app_root, "data")
+        self.questions_path = self._resolve_data_path(questions_path)
+        self.questions = self._load_questions(self.questions_path)
         self.question_order: List[int] = []
         self.question_cursor = 0
 
@@ -70,6 +73,7 @@ class ObjectDetectionApp:
         self.pause_duration_sec = self.DEFAULT_PAUSE_DURATION_SEC
         self.pre_question_countdown_sec = self.DEFAULT_PRE_QUESTION_COUNTDOWN_SEC
         self.vote_window_size = self.DEFAULT_VOTE_WINDOW_SIZE
+        self.shuffle_answers = True
         self.vote_results = deque(maxlen=self.vote_window_size)
 
         self.voting_active = False
@@ -147,56 +151,145 @@ class ObjectDetectionApp:
             return []
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
+            with open(path, "r", encoding="utf-8-sig") as f:
+                text = f.read()
         except Exception as exc:
             print(f"Failed to load questions from {path}: {exc}")
             return []
 
+        try:
+            payload = self._read_question_payload_from_text(text, source_name=os.path.basename(path))
+        except Exception as exc:
+            print(f"Failed to parse questions from {path}: {exc}")
+            return []
+
         return self._normalize_questions(payload)
+
+    def _resolve_data_path(self, source_path: str) -> str:
+        if os.path.isabs(source_path):
+            return source_path
+        return os.path.join(self.app_root, source_path)
+
+    def _supported_question_extension(self, path: str) -> bool:
+        return os.path.splitext(path)[1].lower() in {".json", ".jsonl"}
+
+    def _read_question_payload_from_text(self, text: str, source_name: str = "") -> Any:
+        source_name = str(source_name or "").strip().lower()
+
+        if source_name.endswith(".jsonl"):
+            return self._parse_jsonl(text)
+
+        try:
+            return json.loads(text)
+        except Exception:
+            return self._parse_jsonl(text)
+
+    def _parse_jsonl(self, text: str) -> List[Dict]:
+        parsed = []
+        for line_number, raw_line in enumerate(str(text or "").splitlines(), start=1):
+            line = raw_line.strip().lstrip("\ufeff")
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except Exception as exc:
+                raise ValueError(f"Invalid JSONL at line {line_number}: {exc}") from exc
+            parsed.append(item)
+        return parsed
+
+    def _normalize_single_question(self, item: Dict, index: int) -> Optional[Dict]:
+        if not isinstance(item, dict):
+            return None
+
+        question = str(item.get("question", "")).strip()
+        answers = item.get("answers", [])
+        correct_answer = str(item["correct_answer"]).strip() if item.get("correct_answer") else None
+
+        if not isinstance(answers, list) or len(answers) != 2:
+            return None
+
+        a0 = str(answers[0]).strip()
+        a1 = str(answers[1]).strip()
+        if not question or not a0 or not a1:
+            return None
+
+        try:
+            extra_time = int(item.get("extra_time", 0))
+        except (TypeError, ValueError):
+            extra_time = 0
+
+        more_info = str(item["more_info"]).strip() if item.get("more_info") else None
+
+        return {
+            "id": int(item.get("id", index + 1)),
+            "question": question,
+            "answers": [a0, a1],
+            "extra_time": max(0, extra_time),
+            "correct_answer": correct_answer,
+            "more_info": more_info,
+        }
 
     def _normalize_questions(self, payload: Any) -> List[Dict]:
         if isinstance(payload, dict):
-          items = payload.get("questions", [])
+            items = payload.get("questions", [])
         elif isinstance(payload, list):
-          items = payload
+            items = payload
         else:
-          return []
+            return []
 
         normalized = []
         for i, item in enumerate(items):
-          if not isinstance(item, dict):
-            continue
-
-          id = int(item.get("id", i + 1))
-          question = str(item.get("question", "")).strip()
-          answers = item.get("answers", [])
-          if not isinstance(answers, list) or len(answers) != 2:
-            continue
-          a0 = str(answers[0]).strip()
-          a1 = str(answers[1]).strip()
-          if not question or not a0 or not a1:
-            continue
-          correct_answer = str(item["correct_answer"]).strip() if item.get("correct_answer") else None
-          more_info = str(item["more_info"]).strip() if item.get("more_info") else None
-          try:
-            extra_time = int(item.get("extra_time", 0))
-          except (TypeError, ValueError):
-            extra_time = 0
-          extra_time = max(0, extra_time)
-
-          normalized.append(
-            {
-              "id": id,
-              "question": question,
-              "answers": [a0, a1],
-              "extra_time": extra_time,
-              "correct_answer": correct_answer,
-              "more_info": more_info,
-            }
-          )
+            normalized_item = self._normalize_single_question(item, i)
+            if normalized_item is None:
+                continue
+            normalized.append(normalized_item)
 
         return normalized
+
+    def _list_question_sources(self) -> List[Dict[str, Any]]:
+        if not os.path.isdir(self.data_dir):
+            return []
+
+        files = []
+        selected_default = os.path.basename(self.questions_path)
+        for name in sorted(os.listdir(self.data_dir), key=lambda item: (0 if item.lower().endswith(".jsonl") else 1, item.lower())):
+            abs_path = os.path.join(self.data_dir, name)
+            if not os.path.isfile(abs_path) or not self._supported_question_extension(abs_path):
+                continue
+            files.append(
+                {
+                    "name": name,
+                    "selected": name == selected_default,
+                }
+            )
+        return files
+
+    def _normalize_selected_source_names(self, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            candidates = value
+        else:
+            raw_value = str(value)
+            if "," in raw_value or "\n" in raw_value:
+                candidates = [part.strip() for part in re.split(r"[,\n]", raw_value) if part.strip()]
+            else:
+                candidates = [value]
+
+        selected = []
+        seen = set()
+        for candidate in candidates:
+            name = os.path.basename(str(candidate or "").strip())
+            if not name:
+                continue
+            key = name.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            abs_path = os.path.join(self.data_dir, name)
+            if os.path.isfile(abs_path) and self._supported_question_extension(abs_path):
+                selected.append(name)
+        return selected
 
     def _normalize_voting_mode(self, value: Any) -> str:
         normalized = str(value or "").strip().lower()
@@ -289,10 +382,23 @@ class ObjectDetectionApp:
     def _build_active_question(self, question: Dict) -> Dict:
         active_question = dict(question)
         answers = list(question.get("answers", []))
-        if len(answers) == 2:
+        if self.shuffle_answers and len(answers) == 2:
             random.shuffle(answers)
         active_question["answers"] = answers
         return active_question
+
+    def _coerce_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return bool(value)
 
     def _read_json_body(self) -> Dict:
         raw = cherrypy.request.body.read()
@@ -528,7 +634,7 @@ class ObjectDetectionApp:
         if not self.current_question:
             self._stop_voting_locked(clear_last_result=False)
             return
-        total_duration = max(6, self.vote_duration_sec + self._question_extra_time_sec(self.current_question))
+        total_duration = max(3, self.vote_duration_sec + self._question_extra_time_sec(self.current_question))
         self.voting_phase = "question"
         self.phase_end_ts = time.time() + total_duration
 
@@ -567,10 +673,11 @@ class ObjectDetectionApp:
         if self.voting_phase == "pause":
             self._start_next_question_locked()
 
-    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, pre_question_countdown: int, window_size: int):
+    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, pre_question_countdown: int, window_size: int, shuffle_answers: bool):
         self.vote_duration_sec = vote_duration
         self.pause_duration_sec = pause_duration
         self.pre_question_countdown_sec = pre_question_countdown
+        self.shuffle_answers = bool(shuffle_answers)
         if window_size != self.vote_window_size:
             self.vote_window_size = window_size
             self.vote_results = deque(list(self.vote_results), maxlen=self.vote_window_size)
@@ -679,6 +786,7 @@ class ObjectDetectionApp:
             "pause_duration_sec": self.pause_duration_sec,
             "pre_question_countdown_sec": self.pre_question_countdown_sec,
             "window_size": self.vote_window_size,
+            "shuffle_answers": self.shuffle_answers,
             "recent_scored_votes": len(self.vote_results),
             "accuracy_percent": accuracy,
             "current_question": self.current_question,
@@ -928,6 +1036,7 @@ class ObjectDetectionApp:
             pause_duration = int(payload.get("pause_duration_sec", self.pause_duration_sec))
             pre_question_countdown = int(payload.get("pre_question_countdown_sec", self.pre_question_countdown_sec))
             window_size = int(payload.get("window_size", self.vote_window_size))
+            shuffle_answers = self._coerce_bool(payload.get("shuffle_answers", self.shuffle_answers))
 
             if vote_duration <= 5:
                 raise ValueError("vote_duration_sec must be > 5")
@@ -939,21 +1048,56 @@ class ObjectDetectionApp:
                 raise ValueError("window_size must be >= 1")
 
             with self.lock:
-                self._set_voting_config_locked(vote_duration, pause_duration, pre_question_countdown, window_size)
+                self._set_voting_config_locked(vote_duration, pause_duration, pre_question_countdown, window_size, shuffle_answers)
 
             return {"status": "success", "message": "Voting configuration updated."}
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
 
     @cherrypy.expose("voting/questions")
+    @cherrypy.expose("voting_questions")
     @cherrypy.tools.json_out()
-    def voting_questions(self):
-        payload = self._read_json_body()
+    def voting_questions(self, **_params):
+        content_type = str(cherrypy.request.headers.get("Content-Type", "")).lower()
 
-        if not isinstance(payload, (dict, list)):
-            return {"status": "error", "message": "Provide a JSON array or object with 'questions'."}
+        if content_type.startswith("application/json"):
+            payload = self._read_json_body()
+            if not isinstance(payload, (dict, list)):
+                return {"status": "error", "message": "Provide a JSON array or object with 'questions'."}
+            normalized = self._normalize_questions(payload)
+        else:
+            selected_raw = cherrypy.request.params.get("selected_files")
+            getall = getattr(cherrypy.request.params, "getall", None)
+            if callable(getall):
+                try:
+                    all_selected = getall("selected_files")
+                    if all_selected:
+                        selected_raw = all_selected
+                except Exception:
+                    pass
 
-        normalized = self._normalize_questions(payload)
+            selected_names = self._normalize_selected_source_names(selected_raw)
+            if not selected_names:
+                return {"status": "error", "message": "Select at least one question file from the checklist."}
+
+            normalized = []
+            for name in selected_names:
+                source_path = os.path.join(self.data_dir, name)
+                normalized.extend(self._load_questions(source_path))
+
+            uploaded = cherrypy.request.params.get("questions_file")
+            upload_name = str(getattr(uploaded, "filename", "") or "").strip()
+            upload_stream = getattr(uploaded, "file", None)
+            if upload_name and upload_stream is not None:
+                raw_bytes = upload_stream.read()
+                if raw_bytes:
+                    decoded = raw_bytes.decode("utf-8-sig", errors="replace")
+                    payload = self._read_question_payload_from_text(decoded, source_name=upload_name)
+                    normalized.extend(self._normalize_questions(payload))
+
+        # Keep IDs sequential after merging multiple sources.
+        for idx, question in enumerate(normalized, start=1):
+            question["id"] = idx
 
         with self.lock:
             self.questions = normalized
@@ -961,6 +1105,15 @@ class ObjectDetectionApp:
             self.question_cursor = 0
 
         return {"status": "success", "message": f"Loaded {len(normalized)} questions."}
+
+    @cherrypy.expose("voting/question_sources")
+    @cherrypy.expose("voting_question_sources")
+    @cherrypy.tools.json_out()
+    def voting_question_sources(self):
+        return {
+            "status": "success",
+            "sources": self._list_question_sources(),
+        }
 
     @cherrypy.expose("voting/start")
     @cherrypy.tools.json_out()

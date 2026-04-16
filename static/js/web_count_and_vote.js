@@ -49,6 +49,9 @@ const STREAM_FEED_URL = '/video_feed';
 let streamActive = true;
 let updateIntervalMs = parseInt(document.currentScript?.dataset.updateInterval, 10) || 650;
 const markdownContentCache = new WeakMap();
+let questionSources = [];
+let questionLoadInFlight = false;
+let questionLoadQueued = false;
 
 const chart = new Chart(document.getElementById('countChart').getContext('2d'), {
   type: 'line',
@@ -1212,11 +1215,15 @@ function refreshVoting(v) {
   const pauseDurationInput = document.getElementById('pauseDuration');
   const preQuestionCountdownInput = document.getElementById('preQuestionCountdown');
   const rollingWindowInput = document.getElementById('rollingWindow');
+  const shuffleAnswersInput = document.getElementById('shuffleAnswers');
   if (document.activeElement !== voteDurationInput) voteDurationInput.value = String(v.vote_duration_sec ?? voteDurationInput.value);
   if (document.activeElement !== pauseDurationInput) pauseDurationInput.value = String(v.pause_duration_sec ?? pauseDurationInput.value);
   if (document.activeElement !== preQuestionCountdownInput) preQuestionCountdownInput.value = String(v.pre_question_countdown_sec ?? preQuestionCountdownInput.value);
   if (document.activeElement !== rollingWindowInput) rollingWindowInput.value = String(v.window_size ?? rollingWindowInput.value);
-  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.pre_question_countdown_sec || 0)}|${Number(v.window_size || 0)}`;
+  if (shuffleAnswersInput && document.activeElement !== shuffleAnswersInput) {
+    shuffleAnswersInput.checked = Boolean(v.shuffle_answers ?? true);
+  }
+  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.pre_question_countdown_sec || 0)}|${Number(v.window_size || 0)}|${Boolean(v.shuffle_answers ?? true)}`;
 
   // Update voting display
   const slotCounts = state?.slot_counts || {};
@@ -1404,6 +1411,7 @@ function readVotingConfigPayloadFromInputs() {
   const pauseDuration = Number(document.getElementById('pauseDuration').value);
   const preQuestionCountdown = Number(document.getElementById('preQuestionCountdown').value);
   const windowSize = Number(document.getElementById('rollingWindow').value);
+  const shuffleAnswers = !!document.getElementById('shuffleAnswers')?.checked;
 
   if (!Number.isFinite(voteDuration) || !Number.isFinite(pauseDuration) || !Number.isFinite(preQuestionCountdown) || !Number.isFinite(windowSize)) {
     return null;
@@ -1413,7 +1421,8 @@ function readVotingConfigPayloadFromInputs() {
     vote_duration_sec: Math.trunc(voteDuration),
     pause_duration_sec: Math.trunc(pauseDuration),
     pre_question_countdown_sec: Math.trunc(preQuestionCountdown),
-    window_size: Math.trunc(windowSize)
+    window_size: Math.trunc(windowSize),
+    shuffle_answers: shuffleAnswers
   };
 
   if (payload.vote_duration_sec < 1 || payload.pause_duration_sec < 0 || payload.pre_question_countdown_sec < 0 || payload.window_size < 1) {
@@ -1424,7 +1433,7 @@ function readVotingConfigPayloadFromInputs() {
 }
 
 function getVotingConfigSignature(payload) {
-  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.pre_question_countdown_sec}|${payload.window_size}`;
+  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.pre_question_countdown_sec}|${payload.window_size}|${Boolean(payload.shuffle_answers)}`;
 }
 
 async function saveVotingConfigFromInputs() {
@@ -1475,6 +1484,166 @@ function queueVotingConfigSave() {
     votingConfigDebounceHandle = null;
     await saveVotingConfigFromInputs();
   }, 300);
+}
+
+function normalizeQuestionSources(rawSources) {
+  if (!Array.isArray(rawSources)) {
+    return [];
+  }
+
+  return rawSources
+    .map((entry) => {
+      const name = String(entry?.name || '').trim();
+      if (!name) return null;
+      return {
+        name,
+        selected: entry?.selected !== false,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getSelectedQuestionSources() {
+  return questionSources.filter((entry) => entry.selected).map((entry) => entry.name);
+}
+
+function renderQuestionSources() {
+  const host = document.getElementById('questionSources');
+  if (!host) return;
+
+  if (!questionSources.length) {
+    host.innerHTML = '<div class="question-source-empty">No .jsonl/.json files found in data/.</div>';
+    return;
+  }
+
+  host.innerHTML = questionSources
+    .map((entry, idx) => {
+      const checked = entry.selected ? 'checked' : '';
+      const safeName = escapeHtml(entry.name);
+      return `<label class="question-source-item"><input type="checkbox" data-question-source-index="${idx}" ${checked} /><span>${safeName}</span></label>`;
+    })
+    .join('');
+
+  Array.from(host.querySelectorAll('input[data-question-source-index]')).forEach((input) => {
+    input.addEventListener('change', () => {
+      const index = Number(input.dataset.questionSourceIndex);
+      if (!Number.isInteger(index) || index < 0 || index >= questionSources.length) {
+        return;
+      }
+
+      const nextSelected = !!input.checked;
+      if (!nextSelected) {
+        const selectedCount = questionSources.filter((entry) => entry.selected).length;
+        if (selectedCount <= 1) {
+          input.checked = true;
+          flash('At least one question file must remain selected.');
+          return;
+        }
+      }
+
+      questionSources[index].selected = nextSelected;
+      queueLoadQuestionsFromSelection(true);
+    });
+  });
+}
+
+async function loadQuestionsFromSelection({ silentSuccess = false } = {}) {
+  const selectedSources = getSelectedQuestionSources();
+  if (!selectedSources.length) {
+    flash('Select at least one question file first.');
+    return;
+  }
+
+  if (questionLoadInFlight) {
+    questionLoadQueued = true;
+    return;
+  }
+
+  questionLoadInFlight = true;
+  try {
+    const formData = new FormData();
+    selectedSources.forEach((name) => formData.append('selected_files', name));
+
+    const uploadInput = document.getElementById('questionsFile');
+    const uploadedFile = uploadInput?.files?.[0] || null;
+    if (uploadedFile) {
+      formData.append('questions_file', uploadedFile, uploadedFile.name);
+    }
+
+    const resp = await fetch('/voting_questions', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await readJsonResponse(resp, `Unexpected response from ${resp.url}`);
+
+    if (!data || data.status !== 'success') {
+      flash(data?.message || 'Questions update failed');
+      return;
+    }
+
+    if (!silentSuccess) {
+      flash(data.message || 'Questions updated');
+    }
+    if (uploadInput) {
+      uploadInput.value = '';
+    }
+  } catch (error) {
+    flash(`Questions update failed: ${error.message}`);
+  } finally {
+    questionLoadInFlight = false;
+    if (questionLoadQueued) {
+      questionLoadQueued = false;
+      await loadQuestionsFromSelection({ silentSuccess: true });
+    }
+  }
+}
+
+function queueLoadQuestionsFromSelection(silentSuccess = true) {
+  window.setTimeout(() => {
+    loadQuestionsFromSelection({ silentSuccess });
+  }, 0);
+}
+
+async function readJsonResponse(resp, fallbackMessage) {
+  const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    return resp.json();
+  }
+
+  const text = await resp.text();
+  const compact = text.replace(/\s+/g, ' ').trim();
+  const preview = compact.slice(0, 160) || fallbackMessage;
+  throw new Error(fallbackMessage ? `${fallbackMessage}: ${preview}` : preview);
+}
+
+async function fetchQuestionSources() {
+  const host = document.getElementById('questionSources');
+  if (host) {
+    host.innerHTML = 'Loading files...';
+  }
+
+  try {
+    const resp = await fetch('/voting_question_sources');
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await readJsonResponse(resp, `Unexpected response from ${resp.url}`);
+    if (!data || data.status !== 'success') {
+      throw new Error(data?.message || 'Failed to load question file list');
+    }
+
+    questionSources = normalizeQuestionSources(data.sources);
+    if (questionSources.length && !questionSources.some((entry) => entry.selected)) {
+      questionSources[0].selected = true;
+    }
+    renderQuestionSources();
+  } catch (error) {
+    questionSources = [];
+    if (host) {
+      host.innerHTML = '<div class="question-source-empty">Could not load question files.</div>';
+    }
+    flash(`Question source load failed: ${error.message}`);
+  }
 }
 
 async function fetchState() {
@@ -1677,6 +1846,7 @@ document.getElementById('frameSkipInput').addEventListener('change', queueDetect
   el.addEventListener('input', queueVotingConfigSave);
   el.addEventListener('change', queueVotingConfigSave);
 });
+document.getElementById('shuffleAnswers').addEventListener('change', queueVotingConfigSave);
 
 document.getElementById('startVoting').onclick = async () => {
   const resp = await fetch('/voting_start', { method: 'POST' });
@@ -1691,25 +1861,7 @@ document.getElementById('stopVoting').onclick = async () => {
 };
 
 document.getElementById('loadQuestions').onclick = async () => {
-  const text = document.getElementById('questionsJson').value.trim();
-  if (!text) {
-    flash('Paste a JSON array or object with questions first.');
-    return;
-  }
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    flash('Invalid JSON content.');
-    return;
-  }
-  const resp = await fetch('/voting_questions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await resp.json();
-  flash(data.message || 'Questions updated');
+  await loadQuestionsFromSelection({ silentSuccess: false });
 };
 
 window.addEventListener('resize', () => scheduleResizeSync(12));
@@ -1728,6 +1880,7 @@ initializeUpdateIntervalControl();
 initializePanelVisibilityControls();
 initializePanelToolbarAutoHide();
 updateVotingModeUi();
+fetchQuestionSources();
 
 async function loop() {
   try {

@@ -214,6 +214,31 @@ button:hover {
   font-size: 0.85rem;
 }
 
+.question-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.question-source-item input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.question-source-empty {
+  opacity: 0.75;
+}
+
 .workspace {
   display: grid;
   grid-template-rows: auto auto;
