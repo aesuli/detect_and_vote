@@ -219,9 +219,14 @@ class ObjectDetectionApp:
             extra_time = 0
 
         more_info = str(item["more_info"]).strip() if item.get("more_info") else None
+        raw_id = item.get("id")
+        try:
+            question_id = int(raw_id) if raw_id not in (None, "") else index + 1
+        except (TypeError, ValueError):
+            question_id = index + 1
 
         return {
-            "id": int(item.get("id", index + 1)),
+            "id": question_id,
             "question": question,
             "answers": [a0, a1],
             "extra_time": max(0, extra_time),

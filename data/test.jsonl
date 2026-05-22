@@ -1,4 +1,4 @@
-﻿{"id":1,"question":"Which the **largest planet** in our *solar system*?","answers":["Jupiter","Mars"],"correct_answer":"Jupiter"}
-{"id":2,"question":"Which **language** is primarily used for *styling web pages*?","answers":["CSS","SQL"],"correct_answer":"CSS","more_info":"It means Cascading Style Sheets, but why? 🤷‍♂️"}
-{"id":3,"question":"Is *water*\u0027s chemical formula **H2O**? \u003cimg src=\"https://upload.wikimedia.org/wikipedia/commons/5/5e/Water_drop_001.jpg\"\u003e","answers":["Yes","No"],"extra_time":5,"correct_answer":"Yes","more_info":"Two atoms of Hidrogen and one of Oxygen"}
-{"id":4,"question":"Is *water* an element or a molecule?\n https://upload.wikimedia.org/wikipedia/commons/5/5e/Water_drop_001.jpg","answers":["Element","Molecule"],"extra_time":5,"correct_answer":"Molecule","more_info":"It is composed of Hydrogen and Oxygen"}
+﻿{"question":"Which the **largest planet** in our *solar system*?","answers":["Jupiter","Mars"],"correct_answer":"Jupiter"}
+{"question":"Which **language** is primarily used for *styling web pages*?","answers":["CSS","SQL"],"correct_answer":"CSS","more_info":"It means Cascading Style Sheets, but why? 🤷‍♂️"}
+{"question":"Is *water*'s chemical formula **H2O**? <img src=\"https://upload.wikimedia.org/wikipedia/commons/5/5e/Water_drop_001.jpg\">","answers":["Yes","No"],"extra_time":5,"correct_answer":"Yes","more_info":"Two atoms of Hidrogen and one of Oxygen"}
+{"question":"Is *water* an element or a molecule?\n https://upload.wikimedia.org/wikipedia/commons/5/5e/Water_drop_001.jpg","answers":["Element","Molecule"],"extra_time":5,"correct_answer":"Molecule","more_info":"It is composed of Hydrogen and Oxygen"}
