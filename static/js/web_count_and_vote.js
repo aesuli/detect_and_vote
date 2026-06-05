@@ -49,6 +49,7 @@ const STREAM_FEED_URL = '/video_feed';
 let streamActive = true;
 let updateIntervalMs = parseInt(document.currentScript?.dataset.updateInterval, 10) || 650;
 const markdownContentCache = new WeakMap();
+let currentQuestionSource = null;
 let questionSources = [];
 let questionLoadInFlight = false;
 let questionLoadQueued = false;
@@ -84,14 +85,10 @@ function escapeHtml(value) {
 function isImageUrl(url) {
   if (!url) return false;
   const urlStr = String(url).trim();
-  
-  // Check for http/https URLs
-  if (!/^https?:\/\//i.test(urlStr)) {
-    return false;
-  }
-  
-  // Check if URL ends with image file extensions (jpg, jpeg, png, webm, gif, svg, webp, bmp)
-  // Match before query string or hash
+  if (!urlStr) return false;
+
+  // Check if URL ends with image file extensions (jpg, jpeg, png, webm, gif, svg, webp, bmp).
+  // Works for absolute URLs, relative paths, and local app routes.
   const pathOnly = urlStr.split(/[?#]/)[0];
   return /\.(jpg|jpeg|png|webm|gif|svg|webp|bmp)$/i.test(pathOnly);
 }
@@ -103,6 +100,51 @@ function renderInlineMarkdown(line) {
   return html;
 }
 
+function buildQuestionAssetUrl(relativePath) {
+  if (!currentQuestionSource) {
+    return relativePath;
+  }
+
+  const normalized = String(relativePath || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/\/+/, '/');
+
+  if (!normalized || normalized === '.' || normalized.startsWith('../')) {
+    return relativePath;
+  }
+
+  const segments = normalized.split('/').filter(Boolean).map((part) => encodeURIComponent(part));
+  if (!segments.length) {
+    return relativePath;
+  }
+
+  return `/question_asset/${encodeURIComponent(currentQuestionSource)}/${segments.join('/')}`;
+}
+
+function resolveQuestionUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) {
+    return value;
+  }
+
+  const lower = value.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:') || lower.startsWith('blob:') || lower.startsWith('mailto:') || lower.startsWith('tel:') || lower.startsWith('javascript:')) {
+    return value;
+  }
+
+  if (value.startsWith('/') || value.startsWith('#')) {
+    return value;
+  }
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) {
+    return value;
+  }
+
+  return buildQuestionAssetUrl(value);
+}
+
 function renderBasicMarkdown(markdownText) {
   const normalized = String(markdownText ?? '').trim();
   if (!normalized) {
@@ -110,6 +152,10 @@ function renderBasicMarkdown(markdownText) {
   }
 
   let html = normalized;
+
+  html = html.replace(/(<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*["'])([^"']+)(["'])/gi, (match, prefix, target, suffix) => {
+    return `${prefix}${resolveQuestionUrl(target)}${suffix}`;
+  });
 
   // Preserve raw HTML img tags by temporarily replacing them
   const imgTags = [];
@@ -121,6 +167,14 @@ function renderBasicMarkdown(markdownText) {
   const blocks = html.split(/\n\s*\n+/);
   const renderedBlocks = blocks.map((block) => {
     let trimmed = block.trim();
+    // Protect markdown image syntax so generic URL replacement cannot corrupt it.
+    const markdownImageTokens = [];
+    trimmed = trimmed.replace(/!\[([^\]]*)\]\(([^\s)]+)\)/g, (match, alt, url) => {
+      const token = `__MD_IMG_TOKEN_${markdownImageTokens.length}__`;
+      markdownImageTokens.push({ alt: String(alt || ''), url: String(url || '') });
+      return token;
+    });
+
 
     // Check if this is only a placeholder - restore it as-is
     if (/^__IMG_PLACEHOLDER_\d+__$/.test(trimmed)) {
@@ -131,39 +185,80 @@ function renderBasicMarkdown(markdownText) {
     }
 
     // Check for markdown image syntax ![alt](url)
-    const markdownImage = trimmed.match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/i);
+    const markdownImage = trimmed.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/i);
     if (markdownImage && isImageUrl(markdownImage[2])) {
       const alt = escapeHtml(markdownImage[1] || 'Question image');
-      const src = markdownImage[2];
-      return `<img class="markdown-image" src="${src}" alt="${alt}" loading="lazy" />`;
+      const src = resolveQuestionUrl(markdownImage[2]);
+      return `<img src="${src}" alt="${alt}" loading="lazy" />`;
     }
 
     // Check if entire block is a plain image URL
     if (isImageUrl(trimmed)) {
-      return `<img class="markdown-image" src="${trimmed}" alt="Question image" loading="lazy" />`;
+      return `<img src="${resolveQuestionUrl(trimmed)}" alt="Question image" loading="lazy" />`;
     }
 
-    // Replace image URLs within text with img tags, preserving surrounding text
-    // This handles cases like: "Text before https://example.com/image.jpg text after"
-    trimmed = trimmed.replace(/(https?:\/\/[^\s<>"{}|\\^`\[\]]*\.(?:jpg|jpeg|png|webm|gif|svg|webp|bmp)(?:\?[^\s<>"{}|\\^`\[\]]*)?)/gi, 
-      (url) => `<img class="markdown-image" src="${url}" alt="Image" style="max-width:100%; display:inline;" />`
+    // Replace image URLs within text with img tags, preserving surrounding text.
+    // This handles URLs and relative image paths.
+    trimmed = trimmed.replace(/((?:https?:\/\/|\/)?[^\s<>"{}|\\^`\[\]]*\.(?:jpg|jpeg|png|webm|gif|svg|webp|bmp)(?:\?[^\s<>"{}|\\^`\[\]]*)?)/gi,
+      (url) => `<img src="${resolveQuestionUrl(url)}" alt="Image" loading="lazy" />`
     );
 
-    // Render as inline text with markdown formatting
-    // First escape HTML, then do markdown replacements, then restore placeholders
+    // Restore protected markdown image tokens back to markdown syntax for line-level handling below.
+    trimmed = trimmed.replace(/__MD_IMG_TOKEN_(\d+)__/g, (full, idxText) => {
+      const idx = Number(idxText);
+      const payload = markdownImageTokens[idx];
+      if (!payload) {
+        return full;
+      }
+      return `![${payload.alt}](${payload.url})`;
+    });
+
+    // Render block line-by-line so markdown image syntax works even when a block
+    // contains multiple image lines (for example A/B option images).
+    const renderMarkdownImageSegment = (segment) => {
+      const imageMatch = segment.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/i);
+      if (!imageMatch) {
+        return null;
+      }
+      if (!isImageUrl(imageMatch[2])) {
+        return null;
+      }
+      const alt = escapeHtml(imageMatch[1] || 'Question image');
+      const src = resolveQuestionUrl(imageMatch[2]);
+      return `<img src="${src}" alt="${alt}" loading="lazy" />`;
+    };
+
+    const renderTextLine = (line) => {
+      const segments = line.split(/(<img\b[^>]*>|__IMG_PLACEHOLDER_\d+__|!\[[^\]]*\]\([^\s)]+\))/g);
+      return segments
+        .map((segment) => {
+          if (/^(<img\b[^>]*>|__IMG_PLACEHOLDER_\d+__)$/.test(segment)) {
+            return segment;
+          }
+          const renderedMarkdownImage = renderMarkdownImageSegment(segment);
+          if (renderedMarkdownImage !== null) {
+            return renderedMarkdownImage;
+          }
+          return renderInlineMarkdown(segment);
+        })
+        .join('');
+    };
+
     let result = trimmed
       .split('\n')
       .map((line) => {
-        // Keep image tags/placeholders as-is, but still render markdown around them.
-        const segments = line.split(/(<img\b[^>]*>|__IMG_PLACEHOLDER_\d+__)/g);
-        return segments
-          .map((segment) => {
-            if (/^(<img\b[^>]*>|__IMG_PLACEHOLDER_\d+__)$/.test(segment)) {
-              return segment;
-            }
-            return renderInlineMarkdown(segment);
-          })
-          .join('');
+        const lineTrimmed = line.trim();
+        const lineMarkdownImage = lineTrimmed.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/i);
+        if (lineMarkdownImage && isImageUrl(lineMarkdownImage[2])) {
+          const alt = escapeHtml(lineMarkdownImage[1] || 'Question image');
+          const src = resolveQuestionUrl(lineMarkdownImage[2]);
+          return `<img src="${src}" alt="${alt}" loading="lazy" />`;
+        }
+        if (isImageUrl(lineTrimmed)) {
+          const src = resolveQuestionUrl(lineTrimmed);
+          return `<img src="${src}" alt="Question image" loading="lazy" />`;
+        }
+        return renderTextLine(line);
       })
       .join('<br>');
 
@@ -997,6 +1092,7 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
   // Update question
   const question = votingData.current_question;
   if (question) {
+    currentQuestionSource = question.source || null;
     setMarkdownContent('votingQuestion', question.question, '');
 
     // Update answer blocks
@@ -1093,6 +1189,7 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
   const lastResult = votingData.last_vote_result;
   if (lastResult) {
     const question = lastResult.question;
+    currentQuestionSource = question?.source || null;
 
     // Update question
     setMarkdownContent('pauseQuestionText', question.question, '');
@@ -1176,6 +1273,7 @@ function updateVotingDisplay(votingData, slotCounts) {
   const votingTimer = document.getElementById('votingTimer');
 
   if (!votingData.active) {
+    currentQuestionSource = null;
     // Show idle display
     votingPhaseDisplay.style.display = 'none';
     countdownPhaseDisplay.style.display = 'none';
@@ -1215,15 +1313,19 @@ function refreshVoting(v) {
   const pauseDurationInput = document.getElementById('pauseDuration');
   const preQuestionCountdownInput = document.getElementById('preQuestionCountdown');
   const rollingWindowInput = document.getElementById('rollingWindow');
+  const addReadingTimeInput = document.getElementById('addReadingTime');
   const shuffleAnswersInput = document.getElementById('shuffleAnswers');
   if (document.activeElement !== voteDurationInput) voteDurationInput.value = String(v.vote_duration_sec ?? voteDurationInput.value);
   if (document.activeElement !== pauseDurationInput) pauseDurationInput.value = String(v.pause_duration_sec ?? pauseDurationInput.value);
   if (document.activeElement !== preQuestionCountdownInput) preQuestionCountdownInput.value = String(v.pre_question_countdown_sec ?? preQuestionCountdownInput.value);
   if (document.activeElement !== rollingWindowInput) rollingWindowInput.value = String(v.window_size ?? rollingWindowInput.value);
+  if (addReadingTimeInput && document.activeElement !== addReadingTimeInput) {
+    addReadingTimeInput.checked = Boolean(v.add_reading_time ?? false);
+  }
   if (shuffleAnswersInput && document.activeElement !== shuffleAnswersInput) {
     shuffleAnswersInput.checked = Boolean(v.shuffle_answers ?? true);
   }
-  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.pre_question_countdown_sec || 0)}|${Number(v.window_size || 0)}|${Boolean(v.shuffle_answers ?? true)}`;
+  lastVotingConfigSignature = `${Number(v.vote_duration_sec || 0)}|${Number(v.pause_duration_sec || 0)}|${Number(v.pre_question_countdown_sec || 0)}|${Number(v.window_size || 0)}|${Boolean(v.add_reading_time ?? false)}|${Boolean(v.shuffle_answers ?? true)}`;
 
   // Update voting display
   const slotCounts = state?.slot_counts || {};
@@ -1411,6 +1513,7 @@ function readVotingConfigPayloadFromInputs() {
   const pauseDuration = Number(document.getElementById('pauseDuration').value);
   const preQuestionCountdown = Number(document.getElementById('preQuestionCountdown').value);
   const windowSize = Number(document.getElementById('rollingWindow').value);
+  const addReadingTime = !!document.getElementById('addReadingTime')?.checked;
   const shuffleAnswers = !!document.getElementById('shuffleAnswers')?.checked;
 
   if (!Number.isFinite(voteDuration) || !Number.isFinite(pauseDuration) || !Number.isFinite(preQuestionCountdown) || !Number.isFinite(windowSize)) {
@@ -1422,6 +1525,7 @@ function readVotingConfigPayloadFromInputs() {
     pause_duration_sec: Math.trunc(pauseDuration),
     pre_question_countdown_sec: Math.trunc(preQuestionCountdown),
     window_size: Math.trunc(windowSize),
+    add_reading_time: addReadingTime,
     shuffle_answers: shuffleAnswers
   };
 
@@ -1433,7 +1537,7 @@ function readVotingConfigPayloadFromInputs() {
 }
 
 function getVotingConfigSignature(payload) {
-  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.pre_question_countdown_sec}|${payload.window_size}|${Boolean(payload.shuffle_answers)}`;
+  return `${payload.vote_duration_sec}|${payload.pause_duration_sec}|${payload.pre_question_countdown_sec}|${payload.window_size}|${Boolean(payload.add_reading_time)}|${Boolean(payload.shuffle_answers)}`;
 }
 
 async function saveVotingConfigFromInputs() {
@@ -1512,7 +1616,7 @@ function renderQuestionSources() {
   if (!host) return;
 
   if (!questionSources.length) {
-    host.innerHTML = '<div class="question-source-empty">No .jsonl/.json files found in data/.</div>';
+    host.innerHTML = '<div class="question-source-empty">No .jsonl/.json/.zip files found in data/.</div>';
     return;
   }
 
@@ -1846,6 +1950,7 @@ document.getElementById('frameSkipInput').addEventListener('change', queueDetect
   el.addEventListener('input', queueVotingConfigSave);
   el.addEventListener('change', queueVotingConfigSave);
 });
+document.getElementById('addReadingTime').addEventListener('change', queueVotingConfigSave);
 document.getElementById('shuffleAnswers').addEventListener('change', queueVotingConfigSave);
 
 document.getElementById('startVoting').onclick = async () => {

@@ -3,12 +3,18 @@ os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
 import json
 import math
+import mimetypes
+import posixpath
 import random
 import re
 import threading
 import time
+import urllib.parse
+import zipfile
+import io
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple
+import html
 
 import cherrypy
 import cv2
@@ -23,10 +29,11 @@ class ObjectDetectionApp:
 
     REGION_SLOT_VOTING_MODE = "region_slots"
     OBJECT_LIST_VOTING_MODE = "object_lists"
-    DEFAULT_VOTE_DURATION_SEC = 30
-    DEFAULT_PAUSE_DURATION_SEC = 10
+    DEFAULT_VOTE_DURATION_SEC = 10
+    DEFAULT_PAUSE_DURATION_SEC = 5
     DEFAULT_PRE_QUESTION_COUNTDOWN_SEC = 3
     DEFAULT_VOTE_WINDOW_SIZE = 50
+    READING_SPEED_CHARS_PER_SEC = 15
 
     def __init__(self, questions_path: str = os.path.join("data", "test.jsonl")):
         self.detector_type = "owlvit"
@@ -73,7 +80,8 @@ class ObjectDetectionApp:
         self.pause_duration_sec = self.DEFAULT_PAUSE_DURATION_SEC
         self.pre_question_countdown_sec = self.DEFAULT_PRE_QUESTION_COUNTDOWN_SEC
         self.vote_window_size = self.DEFAULT_VOTE_WINDOW_SIZE
-        self.shuffle_answers = True
+        self.add_reading_time = False
+        self.shuffle_answers = False
         self.vote_results = deque(maxlen=self.vote_window_size)
 
         self.voting_active = False
@@ -150,6 +158,29 @@ class ObjectDetectionApp:
             print(f"Questions file not found at {path}. Voting will start with an empty pool.")
             return []
 
+        source_name = os.path.basename(path)
+        extension = os.path.splitext(path)[1].lower()
+
+        if extension == ".zip":
+            try:
+                with zipfile.ZipFile(path, "r") as archive:
+                    question_member = self._find_questions_member_in_zip(archive)
+                    if not question_member:
+                        print(f"No questions.jsonl found in archive {path}.")
+                        return []
+                    raw_bytes = archive.read(question_member)
+            except Exception as exc:
+                print(f"Failed to load questions from {path}: {exc}")
+                return []
+
+            decoded = raw_bytes.decode("utf-8-sig", errors="replace")
+            try:
+                payload = self._read_question_payload_from_text(decoded, source_name=question_member)
+            except Exception as exc:
+                print(f"Failed to parse questions from {path}: {exc}")
+                return []
+            return self._normalize_questions(payload, source_name=source_name)
+
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
                 text = f.read()
@@ -158,12 +189,12 @@ class ObjectDetectionApp:
             return []
 
         try:
-            payload = self._read_question_payload_from_text(text, source_name=os.path.basename(path))
+            payload = self._read_question_payload_from_text(text, source_name=source_name)
         except Exception as exc:
             print(f"Failed to parse questions from {path}: {exc}")
             return []
 
-        return self._normalize_questions(payload)
+        return self._normalize_questions(payload, source_name=source_name)
 
     def _resolve_data_path(self, source_path: str) -> str:
         if os.path.isabs(source_path):
@@ -171,7 +202,87 @@ class ObjectDetectionApp:
         return os.path.join(self.app_root, source_path)
 
     def _supported_question_extension(self, path: str) -> bool:
-        return os.path.splitext(path)[1].lower() in {".json", ".jsonl"}
+        return os.path.splitext(path)[1].lower() in {".json", ".jsonl", ".zip"}
+
+    def _find_questions_member_in_zip(self, archive: zipfile.ZipFile) -> Optional[str]:
+        candidates = []
+        for member in archive.namelist():
+            normalized = member.replace("\\", "/").strip("/")
+            if not normalized or normalized.endswith("/"):
+                continue
+            if normalized.casefold() == "questions.jsonl":
+                return member
+            if normalized.casefold().endswith("/questions.jsonl"):
+                candidates.append(member)
+        return candidates[0] if candidates else None
+
+    def _normalize_zip_asset_path(self, asset_path: Any) -> Optional[str]:
+        candidate = str(asset_path or "").strip()
+        if not candidate:
+            return None
+
+        candidate = candidate.split("?", 1)[0].split("#", 1)[0]
+        candidate = candidate.replace("\\", "/")
+        candidate = candidate.lstrip("/")
+        normalized = posixpath.normpath(candidate)
+        if normalized in {"", "."}:
+            return None
+        if normalized.startswith("../") or normalized == "..":
+            return None
+        return normalized
+
+    def _zip_asset_url(self, source_name: str, asset_path: str) -> Optional[str]:
+        normalized = self._normalize_zip_asset_path(asset_path)
+        if not normalized:
+            return None
+
+        encoded_source = urllib.parse.quote(str(source_name), safe="")
+        encoded_segments = [urllib.parse.quote(segment, safe="") for segment in normalized.split("/") if segment]
+        if not encoded_segments:
+            return None
+        return "/question_asset/" + encoded_source + "/" + "/".join(encoded_segments)
+
+    def _is_absolute_or_external_link(self, url: str) -> bool:
+        candidate = str(url or "").strip()
+        if not candidate:
+            return True
+        lowered = candidate.lower()
+        if lowered.startswith(("http://", "https://", "data:", "blob:", "mailto:", "tel:", "javascript:")):
+            return True
+        if candidate.startswith(("/", "#")):
+            return True
+        return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", candidate))
+
+    def _resolve_question_asset_link(self, url: str, source_name: str) -> str:
+        if self._is_absolute_or_external_link(url):
+            return url
+        rewritten = self._zip_asset_url(source_name, url)
+        return rewritten or url
+
+    def _rewrite_question_text_asset_links(self, value: Optional[str], source_name: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+
+        text = str(value)
+        source = str(source_name or "").strip()
+        if not source.lower().endswith(".zip"):
+            return text
+
+        def markdown_replacer(match: re.Match) -> str:
+            prefix = match.group(1)
+            target = match.group(2)
+            suffix = match.group(3)
+            return f"{prefix}{self._resolve_question_asset_link(target, source)}{suffix}"
+
+        def html_replacer(match: re.Match) -> str:
+            prefix = match.group(1)
+            target = match.group(2)
+            suffix = match.group(3)
+            return f"{prefix}{self._resolve_question_asset_link(target, source)}{suffix}"
+
+        rewritten = re.sub(r"(!?\[[^\]]*\]\()([^\s)]+)(\))", markdown_replacer, text)
+        rewritten = re.sub(r"(<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*[\"'])([^\"']+)([\"'])", html_replacer, rewritten, flags=re.IGNORECASE)
+        return rewritten
 
     def _read_question_payload_from_text(self, text: str, source_name: str = "") -> Any:
         source_name = str(source_name or "").strip().lower()
@@ -197,19 +308,21 @@ class ObjectDetectionApp:
             parsed.append(item)
         return parsed
 
-    def _normalize_single_question(self, item: Dict, index: int) -> Optional[Dict]:
+    def _normalize_single_question(self, item: Dict, index: int, source_name: Optional[str] = None) -> Optional[Dict]:
         if not isinstance(item, dict):
             return None
 
-        question = str(item.get("question", "")).strip()
+        question = self._rewrite_question_text_asset_links(item.get("question", ""), source_name)
+        question = str(question or "").strip()
         answers = item.get("answers", [])
-        correct_answer = str(item["correct_answer"]).strip() if item.get("correct_answer") else None
+        correct_answer = self._rewrite_question_text_asset_links(item.get("correct_answer"), source_name)
+        correct_answer = str(correct_answer).strip() if correct_answer else None
 
         if not isinstance(answers, list) or len(answers) != 2:
             return None
 
-        a0 = str(answers[0]).strip()
-        a1 = str(answers[1]).strip()
+        a0 = str(self._rewrite_question_text_asset_links(answers[0], source_name) or "").strip()
+        a1 = str(self._rewrite_question_text_asset_links(answers[1], source_name) or "").strip()
         if not question or not a0 or not a1:
             return None
 
@@ -218,14 +331,15 @@ class ObjectDetectionApp:
         except (TypeError, ValueError):
             extra_time = 0
 
-        more_info = str(item["more_info"]).strip() if item.get("more_info") else None
+        more_info = self._rewrite_question_text_asset_links(item.get("more_info"), source_name)
+        more_info = str(more_info).strip() if more_info else None
         raw_id = item.get("id")
         try:
             question_id = int(raw_id) if raw_id not in (None, "") else index + 1
         except (TypeError, ValueError):
             question_id = index + 1
 
-        return {
+        normalized_question = {
             "id": question_id,
             "question": question,
             "answers": [a0, a1],
@@ -233,8 +347,11 @@ class ObjectDetectionApp:
             "correct_answer": correct_answer,
             "more_info": more_info,
         }
+        if source_name:
+            normalized_question["source"] = str(source_name)
+        return normalized_question
 
-    def _normalize_questions(self, payload: Any) -> List[Dict]:
+    def _normalize_questions(self, payload: Any, source_name: Optional[str] = None) -> List[Dict]:
         if isinstance(payload, dict):
             items = payload.get("questions", [])
         elif isinstance(payload, list):
@@ -244,7 +361,7 @@ class ObjectDetectionApp:
 
         normalized = []
         for i, item in enumerate(items):
-            normalized_item = self._normalize_single_question(item, i)
+            normalized_item = self._normalize_single_question(item, i, source_name=source_name)
             if normalized_item is None:
                 continue
             normalized.append(normalized_item)
@@ -390,7 +507,45 @@ class ObjectDetectionApp:
         if self.shuffle_answers and len(answers) == 2:
             random.shuffle(answers)
         active_question["answers"] = answers
+        readable_char_count = self._readable_question_char_count(question.get("question", ""))
+        active_question["readable_char_count"] = readable_char_count
+        active_question["reading_time_sec"] = self._reading_time_seconds_for_chars(readable_char_count)
         return active_question
+
+    def _readable_text_for_question(self, value: Any) -> str:
+        text = str(value or "")
+        if not text:
+            return ""
+
+        # Remove markdown image syntax and HTML <img> tags from readable content.
+        text = re.sub(r"!\[[^\]]*\]\([^\s)]+\)", " ", text)
+        text = re.sub(r"<img\b[^>]*>", " ", text, flags=re.IGNORECASE)
+
+        # Preserve anchor text but drop URLs/attributes.
+        text = re.sub(r"<a\b[^>]*>(.*?)</a>", r"\1", text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"\[([^\]]+)\]\(([^\s)]+)\)", r"\1", text)
+
+        # Remove plain image URLs/paths that may be auto-rendered.
+        text = re.sub(
+            r"(?i)\b(?:https?://|/)?[^\s<>\"'{}|\\^`\[\]]+\.(?:jpg|jpeg|png|webm|gif|svg|webp|bmp)(?:\?[^\s<>\"'{}|\\^`\[\]]*)?\b",
+            " ",
+            text,
+        )
+
+        # Drop remaining HTML tags and markdown control markers.
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"[`*_~#>]", "", text)
+        text = html.unescape(text)
+
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _readable_question_char_count(self, value: Any) -> int:
+        return len(self._readable_text_for_question(value))
+
+    def _reading_time_seconds_for_chars(self, char_count: int) -> int:
+        if char_count <= 0:
+            return 0
+        return int(math.ceil(char_count / float(self.READING_SPEED_CHARS_PER_SEC)))
 
     def _coerce_bool(self, value: Any) -> bool:
         if isinstance(value, bool):
@@ -635,11 +790,26 @@ class ObjectDetectionApp:
         except (TypeError, ValueError):
             return 0
 
+    def _question_reading_time_sec(self, question: Optional[Dict]) -> int:
+        if not question:
+            return 0
+        try:
+            if "reading_time_sec" in question:
+                return max(0, int(question.get("reading_time_sec", 0)))
+        except (TypeError, ValueError):
+            pass
+        return self._reading_time_seconds_for_chars(
+            self._readable_question_char_count(question.get("question", ""))
+        )
+
     def _start_question_phase_locked(self):
         if not self.current_question:
             self._stop_voting_locked(clear_last_result=False)
             return
-        total_duration = max(3, self.vote_duration_sec + self._question_extra_time_sec(self.current_question))
+        total_duration = self.vote_duration_sec + self._question_extra_time_sec(self.current_question)
+        if self.add_reading_time:
+            total_duration += self._question_reading_time_sec(self.current_question)
+        total_duration = max(3, total_duration)
         self.voting_phase = "question"
         self.phase_end_ts = time.time() + total_duration
 
@@ -678,11 +848,12 @@ class ObjectDetectionApp:
         if self.voting_phase == "pause":
             self._start_next_question_locked()
 
-    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, pre_question_countdown: int, window_size: int, shuffle_answers: bool):
+    def _set_voting_config_locked(self, vote_duration: int, pause_duration: int, pre_question_countdown: int, window_size: int, shuffle_answers: bool, add_reading_time: bool):
         self.vote_duration_sec = vote_duration
         self.pause_duration_sec = pause_duration
         self.pre_question_countdown_sec = pre_question_countdown
         self.shuffle_answers = bool(shuffle_answers)
+        self.add_reading_time = bool(add_reading_time)
         if window_size != self.vote_window_size:
             self.vote_window_size = window_size
             self.vote_results = deque(list(self.vote_results), maxlen=self.vote_window_size)
@@ -792,6 +963,8 @@ class ObjectDetectionApp:
             "pre_question_countdown_sec": self.pre_question_countdown_sec,
             "window_size": self.vote_window_size,
             "shuffle_answers": self.shuffle_answers,
+            "add_reading_time": self.add_reading_time,
+            "reading_speed_chars_per_sec": self.READING_SPEED_CHARS_PER_SEC,
             "recent_scored_votes": len(self.vote_results),
             "accuracy_percent": accuracy,
             "current_question": self.current_question,
@@ -1033,6 +1206,7 @@ class ObjectDetectionApp:
         }
 
     @cherrypy.expose("voting/config")
+    @cherrypy.expose("voting_config")
     @cherrypy.tools.json_out()
     def voting_config(self):
         payload = self._read_json_body()
@@ -1042,6 +1216,7 @@ class ObjectDetectionApp:
             pre_question_countdown = int(payload.get("pre_question_countdown_sec", self.pre_question_countdown_sec))
             window_size = int(payload.get("window_size", self.vote_window_size))
             shuffle_answers = self._coerce_bool(payload.get("shuffle_answers", self.shuffle_answers))
+            add_reading_time = self._coerce_bool(payload.get("add_reading_time", self.add_reading_time))
 
             if vote_duration <= 5:
                 raise ValueError("vote_duration_sec must be > 5")
@@ -1053,7 +1228,14 @@ class ObjectDetectionApp:
                 raise ValueError("window_size must be >= 1")
 
             with self.lock:
-                self._set_voting_config_locked(vote_duration, pause_duration, pre_question_countdown, window_size, shuffle_answers)
+                self._set_voting_config_locked(
+                    vote_duration,
+                    pause_duration,
+                    pre_question_countdown,
+                    window_size,
+                    shuffle_answers,
+                    add_reading_time,
+                )
 
             return {"status": "success", "message": "Voting configuration updated."}
         except Exception as exc:
@@ -1096,9 +1278,20 @@ class ObjectDetectionApp:
             if upload_name and upload_stream is not None:
                 raw_bytes = upload_stream.read()
                 if raw_bytes:
-                    decoded = raw_bytes.decode("utf-8-sig", errors="replace")
-                    payload = self._read_question_payload_from_text(decoded, source_name=upload_name)
-                    normalized.extend(self._normalize_questions(payload))
+                    upload_ext = os.path.splitext(upload_name)[1].lower()
+                    if upload_ext == ".zip":
+                        archive_stream = io.BytesIO(raw_bytes)
+                        with zipfile.ZipFile(archive_stream, "r") as archive:
+                            question_member = self._find_questions_member_in_zip(archive)
+                            if not question_member:
+                                raise ValueError("Uploaded zip does not contain questions.jsonl")
+                            decoded = archive.read(question_member).decode("utf-8-sig", errors="replace")
+                            payload = self._read_question_payload_from_text(decoded, source_name=question_member)
+                            normalized.extend(self._normalize_questions(payload, source_name=upload_name))
+                    else:
+                        decoded = raw_bytes.decode("utf-8-sig", errors="replace")
+                        payload = self._read_question_payload_from_text(decoded, source_name=upload_name)
+                        normalized.extend(self._normalize_questions(payload, source_name=upload_name))
 
         # Keep IDs sequential after merging multiple sources.
         for idx, question in enumerate(normalized, start=1):
@@ -1119,6 +1312,46 @@ class ObjectDetectionApp:
             "status": "success",
             "sources": self._list_question_sources(),
         }
+
+    @cherrypy.expose("question_asset")
+    def question_asset(self, source: Optional[str] = None, *asset_parts: str):
+        source_name = os.path.basename(str(source or "").strip())
+        if not source_name or not source_name.lower().endswith(".zip"):
+            raise cherrypy.HTTPError(400, "A zip source name is required.")
+
+        source_path = os.path.join(self.data_dir, source_name)
+        if not os.path.isfile(source_path):
+            raise cherrypy.HTTPError(404, "Zip source not found.")
+
+        raw_asset_path = "/".join([str(part or "") for part in asset_parts])
+        asset_path = self._normalize_zip_asset_path(raw_asset_path)
+        if not asset_path:
+            raise cherrypy.HTTPError(400, "A valid asset path is required.")
+
+        try:
+            with zipfile.ZipFile(source_path, "r") as archive:
+                member_name = None
+                requested = asset_path.casefold()
+                for candidate in archive.namelist():
+                    normalized = candidate.replace("\\", "/").strip("/")
+                    if not normalized or normalized.endswith("/"):
+                        continue
+                    if normalized.casefold() == requested:
+                        member_name = candidate
+                        break
+
+                if not member_name:
+                    raise cherrypy.HTTPError(404, "Asset not found in zip source.")
+
+                payload = archive.read(member_name)
+        except cherrypy.HTTPError:
+            raise
+        except Exception as exc:
+            raise cherrypy.HTTPError(500, f"Failed to read asset: {exc}")
+
+        mime_type, _ = mimetypes.guess_type(asset_path)
+        cherrypy.response.headers["Content-Type"] = mime_type or "application/octet-stream"
+        return payload
 
     @cherrypy.expose("voting/start")
     @cherrypy.tools.json_out()

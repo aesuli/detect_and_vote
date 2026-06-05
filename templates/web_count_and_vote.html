@@ -123,6 +123,10 @@
       </div>
       <label>Pre-question Countdown (s)</label>
       <input id="preQuestionCountdown" type="number" value="3" min="0" />
+      <div class="toggle-line">
+        <input id="addReadingTime" type="checkbox" />
+        <label for="addReadingTime">Add reading time (15 chars/s)</label>
+      </div>
       <label>Rolling Window</label>
       <input id="rollingWindow" type="number" value="50" min="1" />
       <div class="toggle-line">
@@ -136,8 +140,8 @@
 
       <label>Question Files</label>
       <div class="list question-source-list" id="questionSources">Loading files...</div>
-      <label for="questionsFile">Upload Additional Questions (.jsonl/.json)</label>
-      <input id="questionsFile" type="file" accept=".jsonl,.json,application/json" />
+      <label for="questionsFile">Upload Additional Questions (.jsonl/.json/.zip)</label>
+      <input id="questionsFile" type="file" accept=".jsonl,.json,.zip,application/json,application/zip" />
       <button id="loadQuestions">Load Selected Question Sources</button>
 
       <div id="flash" class="chip" style="margin-top:8px;">Ready</div>

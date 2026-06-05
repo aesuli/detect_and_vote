@@ -307,11 +307,12 @@ button:hover {
 .question img,
 .voting-question img,
 .pause-question img {
-  display: block;
+  display: inline-block;
+  vertical-align: top;
   width: auto;
   height: auto;
-  max-width: min(100%, 460px);
-  max-height: 240px;
+  max-width: min(calc(50% - 12px), 460px);
+  max-height: 460px;
   object-fit: contain;
   margin: 6px auto;
   border-radius: 10px;
@@ -319,16 +320,13 @@ button:hover {
   background: #fff;
 }
 
-.markdown-image {
+/* If there is a single image in the question block, let it use the full available width cap. */
+.voting-question img:only-child,
+.pause-question img:only-child,
+.question img:only-child {
   display: block;
-  width: auto;
   max-width: min(100%, 460px);
-  max-height: 240px;
-  object-fit: contain;
   margin: 6px auto;
-  border-radius: 10px;
-  border: 1px solid #d9e1f0;
-  background: #fff;
 }
 
 .region-item {
@@ -358,6 +356,13 @@ button:hover {
 .pause-display,
 .idle-display {
   margin-top: 16px;
+}
+
+.voting-display,
+.pause-display {
+  /* Avoid transformed children from expanding the page scroll area. */
+  overflow: hidden;
+  overflow: clip;
 }
 
 .countdown-display {
