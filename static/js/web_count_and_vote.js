@@ -35,6 +35,7 @@ let detectorSaveInFlight = false;
 let detectorSaveQueued = false;
 let detectorDebounceHandle = null;
 let lastDetectorSignature = null;
+let detectorInputsInitialized = false;
 let canvasDisplayWidth = 1;
 let canvasDisplayHeight = 1;
 let resizeSyncFrameHandle = null;
@@ -1428,7 +1429,7 @@ function syncDetectorInputsFromState(nextState) {
 
   const localDraft = readDetectorDraftFromInputs();
   const localSignature = localDraft ? getDetectorSignature(localDraft) : null;
-  const detectorConfigDirty = !!(localSignature && localSignature !== lastDetectorSignature);
+  const detectorConfigDirty = !!(detectorInputsInitialized && localSignature && localSignature !== lastDetectorSignature);
   if (detectorConfigDirty) {
     updateVotingModeUi();
     return;
@@ -1456,6 +1457,7 @@ function syncDetectorInputsFromState(nextState) {
     frameSkipInput.value = String(nextState.detector.frame_skip ?? frameSkipInput.value);
   }
   updateVotingModeUi(nextState.detector.voting_mode || votingModeInput.value);
+  detectorInputsInitialized = true;
 }
 
 async function saveDetectorFromInputs() {
