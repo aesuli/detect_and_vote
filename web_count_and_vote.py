@@ -36,13 +36,13 @@ class ObjectDetectionApp:
     READING_SPEED_CHARS_PER_SEC = 15
 
     def __init__(self, questions_path: str = os.path.join("data", "test.jsonl")):
-        self.detector_type = "owlvit"
+        self.detector_type = "owlv2"
         self.model_name = None
         self.voting_mode = self.REGION_SLOT_VOTING_MODE
         self.region_vote_objects = ["a person"]
         self.answer_objects: Dict[int, List[str]] = {1: ["the palm of an open hand"], 2: ["a hand closed in a fist"]}
         self.objects = list(self.region_vote_objects)
-        self.threshold = 0.15
+        self.threshold = 0.17
         self.frame_width = 960
         self.frame_height = 540
         self.video_device_id = 0
