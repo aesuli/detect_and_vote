@@ -1,6 +1,7 @@
 import os
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
+import argparse
 import json
 import math
 import mimetypes
@@ -35,17 +36,27 @@ class ObjectDetectionApp:
     DEFAULT_VOTE_WINDOW_SIZE = 50
     READING_SPEED_CHARS_PER_SEC = 15
 
-    def __init__(self, questions_path: str = os.path.join("data", "test.jsonl")):
-        self.detector_type = "owlv2"
-        self.model_name = None
+    def __init__(
+        self,
+        detector_type: str = "owlv2",
+        model_name: Optional[str] = None,
+        objects: Optional[List[str]] = None,
+        threshold: float = 0.17,
+        frame_width: int = 960,
+        frame_height: int = 540,
+        video_device_id: int = 0,
+        questions_path: str = os.path.join("data", "test.jsonl"),
+    ):
+        self.detector_type = detector_type
+        self.model_name = model_name
         self.voting_mode = self.REGION_SLOT_VOTING_MODE
-        self.region_vote_objects = ["a person"]
+        self.region_vote_objects = list(objects or ["a person", "human face", "a hand"])
         self.answer_objects: Dict[int, List[str]] = {1: ["the palm of an open hand"], 2: ["a hand closed in a fist"]}
         self.objects = list(self.region_vote_objects)
-        self.threshold = 0.17
-        self.frame_width = 960
-        self.frame_height = 540
-        self.video_device_id = 0
+        self.threshold = threshold
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.video_device_id = video_device_id
         self.frame_skip = 4
 
         self.detector = None
@@ -1376,8 +1387,24 @@ def app_exit(app: ObjectDetectionApp):
     cherrypy.engine.exit()
 
 
-def main():
-    app = ObjectDetectionApp()
+def main(
+    detector_type: str,
+    model_name: Optional[str],
+    objects: List[str],
+    threshold: float,
+    frame_width: int,
+    frame_height: int,
+    video_device_id: int,
+):
+    app = ObjectDetectionApp(
+        detector_type=detector_type,
+        model_name=model_name,
+        objects=objects,
+        threshold=threshold,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        video_device_id=video_device_id,
+    )
     app.start_capture()
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -1411,4 +1438,61 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Web Count & Vote app using OWL-ViT / OWLv2."
+    )
+    parser.add_argument(
+        "-d", "--detector",
+        type=str,
+        choices=["owlv2", "owlvit"],
+        default="owlv2",
+        help="Type of detector to use: owlv2 or owlvit (default: owlv2)",
+    )
+    parser.add_argument(
+        "-m", "--model-name",
+        help=(
+            f"Pretrained model name (default for owlvit: {OwlViTDetector.DEFAULT_MODEL_NAME}, "
+            f"for owlv2: {Owlv2Detector.DEFAULT_MODEL_NAME})"
+        ),
+    )
+    parser.add_argument(
+        "-o", "--objects",
+        nargs="+",
+        default=["a person", "human face", "a hand"],
+        help="List of objects to detect for region voting (e.g., '\"a person\" \"human face\" \"a hand\"')",
+    )
+    parser.add_argument(
+        "-t", "--threshold",
+        type=float,
+        default=0.17,
+        help="Detection confidence threshold (default: 0.17)",
+    )
+    parser.add_argument(
+        "-fw", "--frame-width",
+        type=int,
+        default=960,
+        help="Frame width (default: 960)",
+    )
+    parser.add_argument(
+        "-fh", "--frame-height",
+        type=int,
+        default=540,
+        help="Frame height (default: 540)",
+    )
+    parser.add_argument(
+        "-vd", "--video-device-id",
+        type=int,
+        default=0,
+        help="Video capture device index (default: 0)",
+    )
+    args = parser.parse_args()
+
+    main(
+        args.detector,
+        args.model_name,
+        args.objects,
+        args.threshold,
+        args.frame_width,
+        args.frame_height,
+        args.video_device_id,
+    )

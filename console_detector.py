@@ -151,8 +151,8 @@ if __name__ == '__main__':
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument('-d', '--detector', type=str, 
-                        choices=['owlv2', 'owlvit'], default='owlvit',
-                        help='Type of detector to use: owl2 or owlvit (default: owlvit)')
+                        choices=['owlv2', 'owlvit'], default='owlv2',
+                        help='Type of detector to use: owlv2 or owlvit (default: owlv2)')
     parser.add_argument('-m', "--model-name", 
         help=f"Pretrained model name (default for owlvit: {OwlViTDetector.DEFAULT_MODEL_NAME}, for owlv2: {Owlv2Detector.DEFAULT_MODEL_NAME})"
     )
@@ -165,20 +165,20 @@ if __name__ == '__main__':
     parser.add_argument(
         "-t", "--threshold",
         type=float,
-        default=0.15,
-        help="Detection confidence threshold (default: 0.15)"
+        default=0.17,
+        help="Detection confidence threshold (default: 0.17)"
     )
     parser.add_argument('-fw',
         "--frame-width",
         type=int,
-        default=640,
-        help="Frame width (default: 640)"
+        default=960,
+        help="Frame width (default: 960)"
     )
     parser.add_argument('-fh',
         "--frame-height",
         type=int,
-        default=480,
-        help="Frame height (default: 480)"
+        default=540,
+        help="Frame height (default: 540)"
     )
     parser.add_argument('-vd',
         "--video-device-id",

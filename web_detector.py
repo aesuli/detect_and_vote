@@ -15,12 +15,12 @@ class ObjectDetectionApp:
     def __init__(self):
         """Initialize the detection app with default settings."""
         # Settings
-        self.detector_type = 'owlvit'
+        self.detector_type = 'owlv2'
         self.model_name = None
         self.objects = ["a person", "human face", "a hand"]
-        self.threshold = 0.15
-        self.frame_width = 640
-        self.frame_height = 480
+        self.threshold = 0.17
+        self.frame_width = 960
+        self.frame_height = 540
         self.video_device_id = 0
         self.frame_skip = 5
         
@@ -452,10 +452,10 @@ class ObjectDetectionApp:
         """Apply new settings from the form."""
         try:
             # Extract and validate new settings
-            new_detector_type = kwargs.get('detector', 'owlvit')
+            new_detector_type = kwargs.get('detector', 'owlv2')
             new_model_name = kwargs.get('model_name') or None
             new_objects = [obj.strip() for obj in kwargs.get('objects', '').split('\n') if obj.strip()]
-            new_threshold = float(kwargs.get('threshold', 0.15))
+            new_threshold = float(kwargs.get('threshold', 0.17))
             new_frame_width = int(kwargs.get('frame_width', 640))
             new_frame_height = int(kwargs.get('frame_height', 480))
             new_video_device_id = int(kwargs.get('video_device_id', 0))
