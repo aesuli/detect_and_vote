@@ -1,4 +1,4 @@
-# Look & Detect: Count & Vote
+# Detect & Vote
 
 A browser-based live voting and counting app for public, interactive installations. It uses a camera feed plus object detection to let a group vote by either:
 
