@@ -1032,7 +1032,7 @@ class ObjectDetectionApp:
         template_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "templates",
-            "web_count_and_vote.html",
+            "web_detect_and_vote.html",
         )
         try:
             with open(template_path, "r", encoding="utf-8") as handle:

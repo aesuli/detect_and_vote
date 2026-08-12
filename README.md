@@ -1,6 +1,6 @@
 # Detect & Vote
 
-A browser-based live voting and counting app for public, interactive installations. It uses a camera feed plus object detection to let a group vote by either:
+A browser-based live voting app for public, interactive installations. It uses a camera feed plus object detection to let a group vote by either:
 
 - moving into a marked region on the screen, or
 - showing a specific object that matches an answer category.
@@ -38,7 +38,7 @@ If needed, install PyTorch for your system first, as the project depends on the 
 Then launch the web app:
 
 ```bash
-python web_count_and_vote.py
+python web_detect_and_vote.py
 ```
 
 By default, the app starts a CherryPy server on:
@@ -59,7 +59,7 @@ Open that URL in a browser. The page includes:
 The app supports a few startup flags for the camera and detector setup:
 
 ```bash
-python web_count_and_vote.py \
+python web_detect_and_vote.py \
   --detector owlv2 \
   --model-name "google/owlv2-base-patch16-ensemble" \
   --objects "a person" "human face" "a hand" \
@@ -184,10 +184,10 @@ Press `Ctrl+C` in the terminal to shut the server down cleanly.
 
 ## Project files
 
-- `web_count_and_vote.py`: CherryPy web app and voting logic
-- `templates/web_count_and_vote.html`: browser interface
-- `static/js/web_count_and_vote.js`: live dashboard and interaction logic
-- `static/css/web_count_and_vote.css`: app styling
+- `web_detect_and_vote.py`: CherryPy web app and voting logic
+- `templates/web_detect_and_vote.html`: browser interface
+- `static/js/web_detect_and_vote.js`: live dashboard and interaction logic
+- `static/css/web_detect_and_vote.css`: app styling
 - `data/`: question datasets and examples
 
 ## License
