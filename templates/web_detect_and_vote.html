@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Region Counter and Quiz Voting</title>
+  <title data-i18n="page.title">Region Counter and Quiz Voting</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
@@ -13,22 +13,22 @@
 <body>
   <div class="panel-toggle-bar" id="panelToggleBar">
     <div class="panel-toggle-content" id="panelToggleContent">
-      <div class="panel-toggle-title mono">Show or hide panels</div>
+      <div class="panel-toggle-title mono" data-i18n="panels.toggleTitle">Show or hide panels</div>
       <label class="panel-toggle-item" for="toggleBackendView">
         <input id="toggleBackendView" type="checkbox" checked />
-        <span>Configuration</span>
+        <span data-i18n="panels.configuration">Configuration</span>
       </label>
       <label class="panel-toggle-item" for="toggleStreamView">
         <input id="toggleStreamView" type="checkbox" checked />
-        <span>Video stream</span>
+        <span data-i18n="panels.videoStream">Video stream</span>
       </label>
       <label class="panel-toggle-item" for="toggleVoteInfoView">
         <input id="toggleVoteInfoView" type="checkbox" checked />
-        <span>Counts and votes</span>
+        <span data-i18n="panels.countsVotes">Counts and votes</span>
       </label>
       <label class="panel-toggle-item" for="toggleCountView">
         <input id="toggleCountView" type="checkbox" checked />
-        <span>Count graph</span>
+        <span data-i18n="panels.countGraph">Count graph</span>
       </label>
     </div>
     <button type="button" class="panel-toggle-handle mono" id="panelToggleHandle" aria-expanded="false" aria-controls="panelToggleContent">↓</button>
@@ -36,125 +36,129 @@
 
   <div class="page">
     <div class="panel" id="backendView">
-      <h1>Detect & Vote</h1>
+      <h1>Detect &amp; Vote</h1>
+      <div class="language-control">
+        <label for="languageSelect" data-i18n="language.label">Language</label>
+        <select id="languageSelect"></select>
+      </div>
       <div class="chip mono" id="modeLabel">Mode: counting</div>
 
-      <h2>Configuration file</h2>
+      <h2 data-i18n="configurationFile.title">Configuration file</h2>
       <div class="row">
-        <button type="button" id="saveConfiguration">Save JSON</button>
-        <button type="button" id="loadConfiguration">Load JSON</button>
+        <button type="button" id="saveConfiguration" data-i18n="configurationFile.save">Save JSON</button>
+        <button type="button" id="loadConfiguration" data-i18n="configurationFile.load">Load JSON</button>
       </div>
       <input id="configurationFile" type="file" accept=".json,application/json" hidden />
-      <div class="hint-text">Includes detector, model, regions, colors, timing, and display preferences. Question datasets are not included.</div>
+      <div class="hint-text" data-i18n="configurationFile.hint">Includes detector, model, regions, colors, timing, and display preferences. Question datasets are not included.</div>
 
-      <h2>Detection</h2>
-      <label>Vote Mapping Mode</label>
+      <h2 data-i18n="detection.title">Detection</h2>
+      <label data-i18n="detection.voteMappingMode">Vote Mapping Mode</label>
       <select id="votingMode">
-        <option value="region_slots">Regions choose answer</option>
-        <option value="object_lists">Object lists choose answer</option>
+        <option value="region_slots" data-i18n="detection.regionSlots">Regions choose answer</option>
+        <option value="object_lists" data-i18n="detection.objectLists">Object lists choose answer</option>
       </select>
-      <label>Detector</label>
+      <label data-i18n="detection.detector">Detector</label>
       <select id="detectorType">
         <option value="owlvit">OWL-ViT</option>
         <option value="owlv2">OWL-v2</option>
       </select>
-      <label>Model Name (optional)</label>
-      <input id="modelNameInput" type="text" placeholder="Use detector default" />
+      <label data-i18n="detection.modelName">Model Name (optional)</label>
+      <input id="modelNameInput" type="text" placeholder="Use detector default" data-i18n-placeholder="detection.modelPlaceholder" />
       <div id="regionObjectsGroup">
-        <label>Detected Objects (one per line)</label>
+        <label data-i18n="detection.detectedObjects">Detected Objects (one per line)</label>
         <textarea id="objectsInput" rows="3">a person</textarea>
       </div>
       <div id="answerObjectsGroup">
         <div class="row">
           <div>
-            <label>Answer 1 Objects</label>
-            <textarea id="answer1ObjectsInput" rows="4" placeholder="blue ball">the palm of an open hand</textarea>
+            <label data-i18n="detection.answer1Objects">Answer 1 Objects</label>
+            <textarea id="answer1ObjectsInput" rows="4" placeholder="blue ball" data-i18n-placeholder="detection.answer1Placeholder">the palm of an open hand</textarea>
           </div>
           <div>
-            <label>Answer 2 Objects</label>
-            <textarea id="answer2ObjectsInput" rows="4" placeholder="red cube">a hand closed in a fist</textarea>
+            <label data-i18n="detection.answer2Objects">Answer 2 Objects</label>
+            <textarea id="answer2ObjectsInput" rows="4" placeholder="red cube" data-i18n-placeholder="detection.answer2Placeholder">a hand closed in a fist</textarea>
           </div>
         </div>
-        <div class="hint-text" id="answerObjectsHint">Detected labels from these lists decide which answer receives the vote.</div>
+        <div class="hint-text" id="answerObjectsHint" data-i18n="detection.answerObjectsHint">Detected labels from these lists decide which answer receives the vote.</div>
       </div>
-      <label>Threshold</label>
+      <label data-i18n="detection.threshold">Threshold</label>
       <input id="thresholdInput" type="number" min="0" max="1" step="0.01" value="0.17" />
-      <label>Frame Skip</label>
+      <label data-i18n="detection.frameSkip">Frame Skip</label>
       <input id="frameSkipInput" type="number" min="1" step="1" value="4" />
-      <label>Update Interval (ms)</label>
+      <label data-i18n="detection.updateInterval">Update Interval (ms)</label>
       <input id="updateIntervalInput" type="number" min="100" max="5000" step="50" value="650" />
       <div class="toggle-line">
         <input id="showDetectionLabel" type="checkbox" checked />
-        <label for="showDetectionLabel">Show label &amp; confidence</label>
+        <label for="showDetectionLabel" data-i18n="detection.showLabel">Show label &amp; confidence</label>
       </div>
       <div class="toggle-line">
         <input id="mirrorView" type="checkbox" />
-        <label for="mirrorView">Mirror camera view</label>
+        <label for="mirrorView" data-i18n="detection.mirrorView">Mirror camera view</label>
       </div>
 
-      <h2>Regions</h2>
-      <div class="hint-text" id="regionsModeHint">In region-based mode each region is assigned to an answer.</div>
+      <h2 data-i18n="regions.title">Regions</h2>
+      <div class="hint-text" id="regionsModeHint" data-i18n="regions.regionModeHint">In region-based mode each region is assigned to an answer.</div>
       <div class="row">
         <div>
-          <label>Answer 1 Color</label>
+          <label data-i18n="regions.answer1Color">Answer 1 Color</label>
           <input id="answer1Color" class="color-input" type="color" value="#0066cc" />
         </div>
         <div>
-          <label>Answer 2 Color</label>
+          <label data-i18n="regions.answer2Color">Answer 2 Color</label>
           <input id="answer2Color" class="color-input" type="color" value="#ffcc00" />
         </div>
       </div>
       <div id="regionAnswerSlotGroup">
-        <label>Assigned Answer</label>
+        <label data-i18n="regions.assignedAnswer">Assigned Answer</label>
         <select id="regionAnswerSlot">
-          <option value="1">Answer 1</option>
-          <option value="2">Answer 2</option>
+          <option value="1" data-i18n="common.answer1">Answer 1</option>
+          <option value="2" data-i18n="common.answer2">Answer 2</option>
         </select>
       </div>
-      <label>Criterion</label>
+      <label data-i18n="regions.criterion">Criterion</label>
       <select id="regionCriterion">
-        <option value="overlap">Overlap</option>
-        <option value="inside">Fully Inside</option>
+        <option value="overlap" data-i18n="regions.overlap">Overlap</option>
+        <option value="inside" data-i18n="regions.fullyInside">Fully Inside</option>
       </select>
-      <button class="btn-primary" id="createRegion">Create Region</button>
+      <button class="btn-primary" id="createRegion" data-i18n="regions.create">Create Region</button>
       <div class="list" id="regionList"></div>
-      <button class="btn-danger" id="deleteSelectedRegion">Delete Selected Region</button>
+      <button class="btn-danger" id="deleteSelectedRegion" data-i18n="regions.deleteSelected">Delete Selected Region</button>
 
-      <h2>Voting</h2>
+      <h2 data-i18n="voting.title">Voting</h2>
       <div class="row">
         <div>
-          <label>Vote Timer (s)</label>
+          <label data-i18n="voting.voteTimer">Vote Timer (s)</label>
           <input id="voteDuration" type="number" value="30" min="6" />
         </div>
         <div>
-          <label>Pause (s)</label>
+          <label data-i18n="voting.pause">Pause (s)</label>
           <input id="pauseDuration" type="number" value="10" min="0" />
         </div>
       </div>
-      <label>Pre-question Countdown (s)</label>
+      <label data-i18n="voting.preQuestionCountdown">Pre-question Countdown (s)</label>
       <input id="preQuestionCountdown" type="number" value="3" min="0" />
       <div class="toggle-line">
         <input id="addReadingTime" type="checkbox" />
-        <label for="addReadingTime">Add reading time (15 chars/s)</label>
+        <label for="addReadingTime" data-i18n="voting.addReadingTime">Add reading time (15 chars/s)</label>
       </div>
-      <label>Rolling Window</label>
+      <label data-i18n="voting.rollingWindow">Rolling Window</label>
       <input id="rollingWindow" type="number" value="50" min="1" />
       <div class="toggle-line">
         <input id="shuffleAnswers" type="checkbox" checked />
-        <label for="shuffleAnswers">Shuffle answers</label>
+        <label for="shuffleAnswers" data-i18n="voting.shuffleAnswers">Shuffle answers</label>
       </div>
       <div class="row">
-        <button class="btn-primary" id="startVoting">Start Voting</button>
-        <button class="btn-danger" id="stopVoting">Stop Voting</button>
+        <button class="btn-primary" id="startVoting" data-i18n="voting.start">Start Voting</button>
+        <button class="btn-danger" id="stopVoting" data-i18n="voting.stop">Stop Voting</button>
       </div>
 
-      <label>Question Files</label>
-      <div class="list question-source-list" id="questionSources">Loading files...</div>
-      <label for="questionsFile">Upload Additional Questions (.jsonl/.json/.zip)</label>
+      <label data-i18n="questions.files">Question Files</label>
+      <div class="list question-source-list" id="questionSources" data-i18n="questions.loading">Loading files...</div>
+      <label for="questionsFile" data-i18n="questions.upload">Upload Additional Questions (.jsonl/.json/.zip)</label>
       <input id="questionsFile" type="file" accept=".jsonl,.json,.zip,application/json,application/zip" />
-      <button id="loadQuestions">Load Selected Question Sources</button>
+      <button id="loadQuestions" data-i18n="questions.load">Load Selected Question Sources</button>
 
-      <div id="flash" class="chip" style="margin-top:8px;">Ready</div>
+      <div id="flash" class="chip" style="margin-top:8px;" data-i18n="common.ready">Ready</div>
     </div>
 
     <div class="workspace">
@@ -181,12 +185,12 @@
               <div class="answer-count" id="answerCount2">0</div>
             </div>
           </div>
-          <div class="voting-timer" id="votingTimer">Time left: 30s</div>
+          <div class="voting-timer" id="votingTimer" data-i18n="voting.timeLeft" data-i18n-value="30">Time left: 30s</div>
         </div>
 
         <!-- Pre-Question Countdown Display -->
         <div id="countdownPhaseDisplay" class="countdown-display" style="display: none;">
-          <div class="countdown-label">Get ready</div>
+          <div class="countdown-label" data-i18n="voting.getReady">Get ready</div>
           <div class="countdown-number" id="countdownNumber">3</div>
         </div>
 
@@ -208,10 +212,10 @@
             <div class="pause-correct-wrong" id="pauseCorrectWrong"></div>
           </div>
           <div class="pause-accuracy-container" id="pauseAccuracyContainer" style="display: none;">
-            <div class="pause-accuracy-label" id="pauseAccuracyLabel">Recent accuracy:</div>
+            <div class="pause-accuracy-label" id="pauseAccuracyLabel" data-i18n="voting.recentAccuracy">Recent accuracy:</div>
             <div class="pause-accuracy-value" id="pauseAccuracyValue">0%</div>
           </div>
-          <div class="pause-countdown" id="pauseCountdown">Next question in 10s</div>
+          <div class="pause-countdown" id="pauseCountdown" data-i18n="voting.nextQuestion" data-i18n-value="10">Next question in 10s</div>
         </div>
 
         <!-- Idle Phase Display -->
@@ -229,6 +233,8 @@
     <span class="footer-short">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://www.cnr.it/">CNR</a></span>
     <span class="footer-full">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://hlt-isti.github.io/">AI4Text</a> / <a href="https://aimh.isti.cnr.it/">AIMH</a> / <a href="https://www.isti.cnr.it/">ISTI</a> / <a href="https://www.cnr.it/">CNR</a></span>
   </footer>
-  <script src="/static/js/web_detect_and_vote.js?v=2" data-update-interval="250"></script>
+  <script src="/static/js/locales/en.js?v=1"></script>
+  <script src="/static/js/locales/it.js?v=1"></script>
+  <script src="/static/js/web_detect_and_vote.js?v=3" data-update-interval="250"></script>
 </body>
 </html>

@@ -46,6 +46,7 @@ const MIRROR_VIEW_STORAGE_KEY = 'look_and_detect_mirror_view';
 const SHOW_DETECTION_LABEL_STORAGE_KEY = 'look_and_detect_show_detection_label';
 const PANEL_VISIBILITY_STORAGE_KEY = 'look_and_detect_panel_visibility';
 const UPDATE_INTERVAL_STORAGE_KEY = 'look_and_detect_update_interval';
+const LANGUAGE_STORAGE_KEY = 'look_and_detect_language';
 const STREAM_FEED_URL = '/video_feed';
 let streamActive = true;
 let updateIntervalMs = parseInt(document.currentScript?.dataset.updateInterval, 10) || 650;
@@ -54,6 +55,56 @@ let currentQuestionSource = null;
 let questionSources = [];
 let questionLoadInFlight = false;
 let questionLoadQueued = false;
+
+const translations = window.DETECT_AND_VOTE_TRANSLATIONS || {};
+
+let currentLanguage = 'en';
+
+function t(key, values = {}) {
+  const template = translations[currentLanguage]?.[key] || translations.en[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? `{${name}}`));
+}
+
+function applyTranslations() {
+  document.documentElement.lang = currentLanguage;
+  document.querySelectorAll('[data-i18n]').forEach((element) => {
+    const key = element.dataset.i18n;
+    const value = element.dataset.i18nValue;
+    element.textContent = value === undefined ? t(key) : t(key, { value });
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+    element.placeholder = t(element.dataset.i18nPlaceholder);
+  });
+  const languageSelect = document.getElementById('languageSelect');
+  if (languageSelect) languageSelect.value = currentLanguage;
+  document.title = t('page.title');
+  updateVotingModeUi();
+  refreshRegionList();
+  refreshCounts(state?.slot_counts || {});
+  if (state?.voting) refreshVoting(state.voting);
+}
+
+function initializeLanguageControl() {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored && translations[stored]) currentLanguage = stored;
+  } catch (_err) { /* ignore */ }
+  const languageSelect = document.getElementById('languageSelect');
+  if (languageSelect) {
+    Object.keys(translations).sort().forEach((languageCode) => {
+      const option = document.createElement('option');
+      option.value = languageCode;
+      option.textContent = translations[languageCode]['language.name'] || languageCode;
+      languageSelect.appendChild(option);
+    });
+  }
+  languageSelect?.addEventListener('change', () => {
+    currentLanguage = translations[languageSelect.value] ? languageSelect.value : 'en';
+    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage); } catch (_err) { /* ignore */ }
+    applyTranslations();
+  });
+  applyTranslations();
+}
 
 const chartCanvas = document.getElementById('countChart');
 let chart = null;
@@ -359,9 +410,9 @@ function getObjectListSignature(items) {
 function describeAssignment(det) {
   if (det.vote_display_name) return det.vote_display_name;
   if (det.region_display_name) return det.region_display_name;
-  if (det.assignment_reason === 'outside_vote_area') return 'outside vote area';
-  if (det.assignment_reason === 'label_not_mapped') return 'no answer match';
-  return 'unassigned';
+  if (det.assignment_reason === 'outside_vote_area') return currentLanguage === 'it' ? 'fuori area di voto' : 'outside vote area';
+  if (det.assignment_reason === 'label_not_mapped') return currentLanguage === 'it' ? 'nessuna risposta corrispondente' : 'no answer match';
+  return currentLanguage === 'it' ? 'non assegnato' : 'unassigned';
 }
 
 function getRegionColor(region, index, isSelected = false) {
@@ -393,8 +444,8 @@ function updateVotingModeUi(mode = getVotingMode()) {
   }
   if (regionsModeHint) {
     regionsModeHint.textContent = isObjectMode
-      ? 'In object-list mode regions only define where detections are allowed to count as votes.'
-      : 'In region-based mode each region is assigned to an answer.';
+      ? t('regions.objectModeHint')
+      : t('regions.regionModeHint');
   }
 }
 
@@ -864,9 +915,9 @@ function getAnswerSlotName(slot, { preferQuestionAnswer = false } = {}) {
     return answerText;
   }
   if (answerText) {
-    return `Answer ${normalizedSlot} (${answerText})`;
+    return `${t(normalizedSlot === 2 ? 'common.answer2' : 'common.answer1')} (${answerText})`;
   }
-  return `Answer ${normalizedSlot}`;
+  return t(normalizedSlot === 2 ? 'common.answer2' : 'common.answer1');
 }
 
 function syncRegionEditorFromSelected() {
@@ -935,7 +986,7 @@ function drawOverlay() {
 function refreshRegionList() {
   const host = document.getElementById('regionList');
   if (!regions.length) {
-    host.innerHTML = 'No regions yet.';
+    host.textContent = t('common.noRegions');
     selectedRegionId = null;
     syncRegionEditorFromSelected();
     return;
@@ -946,9 +997,10 @@ function refreshRegionList() {
   host.innerHTML = regions.map((r) => {
     const cls = Number(r.id) === Number(selectedRegionId) ? 'region-item selected' : 'region-item';
     const slotMeta = isObjectListVotingMode()
-      ? 'Vote area'
+      ? t('common.voteArea')
       : getAnswerSlotName(r.answer_slot || 1);
-    return `<div class="${cls}" data-id="${r.id}">#${r.id} <b>${slotMeta}</b><span class="region-meta">${r.criterion} - ${r.points.length} pts</span></div>`;
+    const criterionLabel = r.criterion === 'inside' ? t('regions.fullyInside') : t('regions.overlap');
+    return `<div class="${cls}" data-id="${r.id}">#${r.id} <b>${slotMeta}</b><span class="region-meta">${criterionLabel} - ${r.points.length} pts</span></div>`;
   }).join('');
   Array.from(host.querySelectorAll('.region-item')).forEach((el) => {
     el.addEventListener('click', () => {
@@ -1048,7 +1100,7 @@ function refreshCounts(labelCounts) {
   const slotCounts = labelCounts || {};
   const entries = [1, 2].map((slot) => [getAnswerSlotName(slot, { preferQuestionAnswer: true }), Number(slotCounts[String(slot)] || slotCounts[slot] || 0)]);
   if (!entries.length) {
-    host.innerHTML = '<div class="chip">No labeled counts</div>';
+    host.innerHTML = `<div class="chip">${escapeHtml(t('common.noLabeledCounts'))}</div>`;
     return;
   }
   host.innerHTML = entries.map(([k, v], index) => `<div class="chip" style="border-color: ${getSlotColor(index + 1)};"><b>${k}</b>: ${v}</div>`).join('');
@@ -1111,11 +1163,11 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
     const count2 = Number(slotCounts?.[2] || slotCounts?.['2'] || 0);
 
     // Update Answer 1
-    setMarkdownContent('answerText1', answers[0] || '', 'Answer 1');
+    setMarkdownContent('answerText1', answers[0] || '', t('common.answer1'));
     document.getElementById('answerCount1').textContent = count1;
 
     // Update Answer 2
-    setMarkdownContent('answerText2', answers[1] || '', 'Answer 2');
+    setMarkdownContent('answerText2', answers[1] || '', t('common.answer2'));
     document.getElementById('answerCount2').textContent = count2;
     
     // Update block styling based on colors
@@ -1147,7 +1199,7 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
     
     // Update timer
     const timeLeft = votingData.time_left_sec || 0;
-    votingTimer.textContent = `Time left: ${timeLeft}s`;
+    votingTimer.textContent = t('voting.timeLeft', { value: timeLeft });
     votingTimer.classList.toggle('urgent', timeLeft <= 5);
   }
 }
@@ -1209,9 +1261,9 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     const count1 = lastResult.counts?.[answers[0]] || 0;
     const count2 = lastResult.counts?.[answers[1]] || 0;
 
-    setMarkdownContent('pauseAnswer1Label', answers[0] || '', 'Answer 1');
+    setMarkdownContent('pauseAnswer1Label', answers[0] || '', t('common.answer1'));
     document.getElementById('pauseAnswer1Count').textContent = count1;
-    setMarkdownContent('pauseAnswer2Label', answers[1] || '', 'Answer 2');
+    setMarkdownContent('pauseAnswer2Label', answers[1] || '', t('common.answer2'));
     document.getElementById('pauseAnswer2Count').textContent = count2;
     
     // Update colors
@@ -1226,21 +1278,21 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     const resultMsg = document.getElementById('pauseResultMessage');
     
     if (lastResult.voted_answer === null) {
-      resultMsg.textContent = '⚖️ It\'s a tie!';
+      resultMsg.textContent = t('common.tie');
       resultMsg.className = 'pause-result-message tie';
     } else if (lastResult.is_correct === true) {
-      resultMsg.textContent = '✓ Correct!';
+      resultMsg.textContent = t('common.correct');
       resultMsg.className = 'pause-result-message correct';
     } else if (lastResult.is_correct === false) {
-      resultMsg.textContent = '✗ Wrong';
+      resultMsg.textContent = t('common.wrong');
       resultMsg.className = 'pause-result-message incorrect';
     } else {
-      resultMsg.textContent = 'Result unknown';
+      resultMsg.textContent = t('common.resultUnknown');
       resultMsg.className = 'pause-result-message tie';
     }
     
     // Apply check/cross marks to answer items
-    const correctAnswer = question.correct_answer || 'Not specified';
+    const correctAnswer = question.correct_answer || t('common.notSpecified');
     const answerBlock1 = document.getElementById('pauseAnswer1');
     const answerBlock2 = document.getElementById('pauseAnswer2');
     
@@ -1255,7 +1307,7 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     // Show correct/wrong answer
     const correctWrongDiv = document.getElementById('pauseCorrectWrong');
     const moreInfo = question.more_info ? `<div class="pause-more-info">${renderBasicMarkdown(question.more_info)}</div>` : '';
-    correctWrongDiv.innerHTML = `Correct answer: ${renderBasicMarkdown(correctAnswer) || escapeHtml('Not specified')}${moreInfo}`;
+    correctWrongDiv.innerHTML = `${escapeHtml(t('common.correctAnswer'))} ${renderBasicMarkdown(correctAnswer) || escapeHtml(t('common.notSpecified'))}${moreInfo}`;
     
     // Update accuracy display
     const accuracyContainer = document.getElementById('pauseAccuracyContainer');
@@ -1263,7 +1315,7 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     if (recentVotes > 0 && votingData.accuracy_percent !== null) {
       accuracyContainer.style.display = 'block';
       const accuracy = votingData.accuracy_percent;
-      document.getElementById('pauseAccuracyLabel').textContent = `Recent accuracy (last ${recentVotes} questions):`;
+      document.getElementById('pauseAccuracyLabel').textContent = t('common.recentAccuracyQuestions', { value: recentVotes });
       document.getElementById('pauseAccuracyValue').textContent = `${accuracy}%`;
     } else {
       accuracyContainer.style.display = 'none';
@@ -1271,7 +1323,7 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     
     // Update countdown
     const timeLeft = Number(votingData.time_left_sec ?? 0);
-    document.getElementById('pauseCountdown').textContent = `Next question in ${timeLeft}s`;
+    document.getElementById('pauseCountdown').textContent = t('common.nextQuestion', { value: timeLeft });
   }
 }
 
@@ -1314,8 +1366,8 @@ function updateVotingDisplay(votingData, slotCounts) {
 }
 
 function refreshVoting(v) {
-  const mappingModeLabel = getVotingMode() === 'object_lists' ? 'object lists' : 'region slots';
-  document.getElementById('modeLabel').textContent = `Mode: ${v.active ? 'voting' : 'counting'} / ${mappingModeLabel}`;
+  const mappingModeLabel = getVotingMode() === 'object_lists' ? t('common.objectLists') : t('common.regionSlots');
+  document.getElementById('modeLabel').textContent = `${t('common.mode')}: ${v.active ? t('common.voting') : t('common.counting')} / ${mappingModeLabel}`;
   const countChipsHost = document.getElementById('countChips');
   countChipsHost.style.display = v.active ? 'none' : 'flex';
 
@@ -1345,8 +1397,8 @@ function refreshVoting(v) {
   const statHost = document.getElementById('voteStats');
   const acc = v.accuracy_percent === null ? 'n/a' : `${v.accuracy_percent}%`;
   statHost.innerHTML = [
-    `<div class="chip">Accuracy: ${acc}</div>`,
-    `<div class="chip">Scored votes: ${v.recent_scored_votes}</div>`,
+    `<div class="chip">${t('common.accuracy')}: ${acc}</div>`,
+    `<div class="chip">${t('common.scoredVotes')}: ${v.recent_scored_votes}</div>`,
   ].join('');
   statHost.style.display = v.active ? 'none' : 'flex';
 }
@@ -2197,6 +2249,7 @@ if (typeof ResizeObserver !== 'undefined') {
   resizeObserver.observe(videoWrap);
 }
 
+initializeLanguageControl();
 initializeShowDetectionLabelControl();
 initializeMirrorViewControl();
 initializeUpdateIntervalControl();
