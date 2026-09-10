@@ -351,6 +351,22 @@ button:hover {
 }
 
 /* Voting and Pause Display Styles */
+#voteInfoView {
+  /* Keep public-facing information large and within a narrow type scale. */
+  --vote-text-size: clamp(1.35rem, 1.7vw, 1.6rem);
+  --vote-heading-size: clamp(1.6rem, 2vw, 1.9rem);
+  --vote-value-size: clamp(2.5rem, 3.5vw, 3rem);
+}
+
+#voteInfoView .status-bar,
+#voteInfoView .chip {
+  font-size: var(--vote-text-size);
+}
+
+#voteInfoView .chip {
+  padding: 9px 15px;
+}
+
 .voting-display,
 .countdown-display,
 .pause-display,
@@ -379,7 +395,7 @@ button:hover {
 }
 
 .countdown-label {
-  font-size: clamp(1.3rem, 2vw, 1.8rem);
+  font-size: var(--vote-heading-size);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -439,14 +455,14 @@ button:hover {
 
 .answer-count,
 .pause-answer-count {
-  font-size: 3rem;
+  font-size: var(--vote-value-size);
   font-weight: 700;
   font-family: 'IBM Plex Mono', monospace;
   color: var(--accent);
 }
 
 .voting-timer {
-  font-size: clamp(1.12rem, 1.4vw, 1.28rem);
+  font-size: var(--vote-text-size);
   font-weight: 600;
   text-align: center;
   padding: 12px;
@@ -479,7 +495,7 @@ button:hover {
 .answer-text,
 .pause-answer-label,
 .pause-question {
-  font-size: clamp(1.45rem, 1.9vw, 1.85rem);
+  font-size: var(--vote-heading-size);
   font-weight: 700;
   margin-bottom: 16px;
   color: var(--ink);
@@ -510,7 +526,7 @@ button:hover {
 }
 
 .pause-correct-wrong {
-  font-size: clamp(1.05rem, 1.25vw, 1.22rem);
+  font-size: var(--vote-text-size);
   color: var(--ink);
   margin-bottom: 12px;
   font-weight: 600;
@@ -518,7 +534,7 @@ button:hover {
 
 .pause-more-info {
   margin-top: 6px;
-  font-size: clamp(0.9rem, 1.1vw, 1.05rem);
+  font-size: var(--vote-text-size);
   font-weight: 400;
   color: #555;
   font-style: italic;
@@ -530,7 +546,7 @@ button:hover {
 }
 
 .pause-result-message {
-  font-size: clamp(1.2rem, 1.45vw, 1.42rem);
+  font-size: var(--vote-text-size);
   font-weight: 700;
   margin-bottom: 8px;
   padding: 12px;
@@ -557,7 +573,7 @@ button:hover {
 }
 
 .pause-correct-answer {
-  font-size: clamp(1.05rem, 1.25vw, 1.22rem);
+  font-size: var(--vote-text-size);
   color: var(--ink);
   margin-bottom: 12px;
   font-weight: 600;
@@ -573,21 +589,21 @@ button:hover {
 }
 
 .pause-accuracy-label {
-  font-size: clamp(1rem, 1.2vw, 1.16rem);
+  font-size: var(--vote-text-size);
   color: #555;
   margin-bottom: 6px;
   font-weight: 500;
 }
 
 .pause-accuracy-value {
-  font-size: 1.8rem;
+  font-size: var(--vote-value-size);
   font-weight: 700;
   font-family: 'IBM Plex Mono', monospace;
   color: var(--accent);
 }
 
 .pause-countdown {
-  font-size: clamp(1.12rem, 1.4vw, 1.28rem);
+  font-size: var(--vote-text-size);
   font-weight: 600;
   text-align: center;
   padding: 12px;

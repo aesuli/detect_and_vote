@@ -597,6 +597,22 @@ class ObjectDetectionApp:
 
         self.region_masks = masks
 
+    def _scale_regions_locked(self, old_width: int, old_height: int, new_width: int, new_height: int):
+        """Keep customized regions in the same relative place after a frame resize."""
+        if old_width <= 0 or old_height <= 0 or new_width <= 0 or new_height <= 0:
+            return
+        scale_x = (new_width - 1) / float(max(1, old_width - 1))
+        scale_y = (new_height - 1) / float(max(1, old_height - 1))
+        for region in self.regions:
+            scaled_points = []
+            for point in region.get("points", []):
+                if not isinstance(point, (list, tuple)) or len(point) != 2:
+                    continue
+                x = max(0, min(new_width - 1, int(round(float(point[0]) * scale_x))))
+                y = max(0, min(new_height - 1, int(round(float(point[1]) * scale_y))))
+                scaled_points.append([x, y])
+            region["points"] = scaled_points
+
     def _region_answer_slot(self, region: Dict) -> int:
         raw_slot = region.get("answer_slot", region.get("label", 1))
         try:
@@ -910,11 +926,14 @@ class ObjectDetectionApp:
             with self.lock:
                 h, w = frame.shape[:2]
                 if (w, h) != (self.frame_width, self.frame_height):
+                    old_width, old_height = self.frame_width, self.frame_height
                     self.frame_width = w
                     self.frame_height = h
                     if not self._regions_customized:
                         self.regions = self._build_default_regions()
                         self.next_region_id = len(self.regions) + 1
+                    else:
+                        self._scale_regions_locked(old_width, old_height, w, h)
                     self._rebuild_region_masks_locked()
 
                 assignments, region_counts, slot_counts = self._assign_detections_locked(detections)
@@ -1395,6 +1414,8 @@ def main(
     frame_width: int,
     frame_height: int,
     video_device_id: int,
+    host: str = "127.0.0.1",
+    port: int = 8080,
 ):
     app = ObjectDetectionApp(
         detector_type=detector_type,
@@ -1419,10 +1440,10 @@ def main(
         }
     }
 
-    cherrypy.config.update({"server.socket_port": 8080})
+    cherrypy.config.update({"server.socket_host": host, "server.socket_port": port})
     cherrypy.tree.mount(app, "/", config)
 
-    print("Starting Count & Vote app on http://localhost:8080")
+    print(f"Starting Count & Vote app on http://{host}:{port}")
     print("Press Ctrl+C to stop the server")
 
     signal_handler = SignalHandler(cherrypy.engine)
@@ -1485,6 +1506,17 @@ if __name__ == "__main__":
         default=0,
         help="Video capture device index (default: 0)",
     )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host address to bind to (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
     args = parser.parse_args()
 
     main(
@@ -1495,4 +1527,6 @@ if __name__ == "__main__":
         args.frame_width,
         args.frame_height,
         args.video_device_id,
+        args.host,
+        args.port,
     )

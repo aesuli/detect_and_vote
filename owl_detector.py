@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import os
+
 import torch
 from transformers import Owlv2ForObjectDetection, Owlv2Processor,  OwlViTForObjectDetection, OwlViTProcessor
 
@@ -64,6 +66,26 @@ class OwlDetector(ABC):
         self.threshold = float(threshold)
         print(f"Updated detection threshold: {self.threshold}")
 
+    @staticmethod
+    def _from_pretrained_cached_first(loader, model_name, **kwargs):
+        """Use an existing Hugging Face cache without making a metadata request.
+
+        If the cache is incomplete and offline mode was not explicitly requested,
+        fall back to the normal Hub-enabled loader so first-time setup still works.
+        """
+        try:
+            return loader.from_pretrained(model_name, local_files_only=True, **kwargs)
+        except OSError as cache_error:
+            offline = os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {"1", "ON", "YES", "TRUE"}
+            offline = offline or os.environ.get("TRANSFORMERS_OFFLINE", "").strip().upper() in {"1", "ON", "YES", "TRUE"}
+            if offline:
+                raise RuntimeError(
+                    f"Model '{model_name}' is not completely cached and offline mode is enabled. "
+                    "Connect once to download the missing model/processor files."
+                ) from cache_error
+            print(f"Local cache for {model_name} is incomplete; downloading missing files from Hugging Face.")
+            return loader.from_pretrained(model_name, **kwargs)
+
     def detect_objects(self, frame):
         """
         Detect objects in the provided frame.
@@ -123,8 +145,8 @@ class OwlViTDetector(OwlDetector):
             tuple: (model, processor)
         """
         print(f"Loading model: {self.model_name}")
-        model = OwlViTForObjectDetection.from_pretrained(self.model_name)
-        processor = OwlViTProcessor.from_pretrained(self.model_name)
+        model = self._from_pretrained_cached_first(OwlViTForObjectDetection, self.model_name)
+        processor = self._from_pretrained_cached_first(OwlViTProcessor, self.model_name)
         model = model.to(self.device)
         return model, processor
 
@@ -142,7 +164,7 @@ class Owlv2Detector(OwlDetector):
             tuple: (model, processor)
         """
         print(f"Loading model: {self.model_name}")
-        model = Owlv2ForObjectDetection.from_pretrained(self.model_name)
+        model = self._from_pretrained_cached_first(Owlv2ForObjectDetection, self.model_name)
         model = model.to(self.device)
-        processor = Owlv2Processor.from_pretrained(self.model_name, use_fast=True)
+        processor = self._from_pretrained_cached_first(Owlv2Processor, self.model_name, use_fast=True)
         return model, processor

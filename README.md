@@ -66,7 +66,9 @@ python web_detect_and_vote.py \
   --threshold 0.17 \
   --frame-width 960 \
   --frame-height 540 \
-  --video-device-id 0
+  --video-device-id 0 \
+  --host 127.0.0.1 \
+  --port 8080
 ```
 
 Common arguments:
@@ -77,6 +79,8 @@ Common arguments:
 - `--threshold`: detection confidence threshold
 - `--frame-width` / `--frame-height`: camera resolution
 - `--video-device-id`: webcam index, usually `0` for the default camera
+- `--host`: host address to bind to (default: `127.0.0.1`)
+- `--port`: port to listen on (default: `8080`)
 
 ## Configuring the app
 

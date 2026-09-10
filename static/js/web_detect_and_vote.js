@@ -55,16 +55,24 @@ let questionSources = [];
 let questionLoadInFlight = false;
 let questionLoadQueued = false;
 
-const chart = new Chart(document.getElementById('countChart').getContext('2d'), {
-  type: 'line',
-  data: { labels: [], datasets: [] },
-  options: {
-    animation: false,
-    responsive: true,
-    plugins: { legend: { position: 'bottom' } },
-    scales: { x: { display: false }, y: { beginAtZero: true } }
+const chartCanvas = document.getElementById('countChart');
+let chart = null;
+if (typeof Chart !== 'undefined' && chartCanvas) {
+  try {
+    chart = new Chart(chartCanvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        animation: false,
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { x: { display: false }, y: { beginAtZero: true } }
+      }
+    });
+  } catch (error) {
+    console.warn('Count chart disabled:', error);
   }
-});
+}
 
 function flash(msg) {
   document.getElementById('flash').textContent = msg;
@@ -1011,6 +1019,7 @@ async function finishPointDrag() {
 }
 
 function rebuildChart(history) {
+  if (!chart) return;
   if (!history || !history.length) {
     chart.data.labels = [];
     chart.data.datasets = [];
@@ -1345,6 +1354,7 @@ function refreshVoting(v) {
 function readDetectorDraftFromInputs() {
   const votingMode = document.getElementById('votingMode').value || 'region_slots';
   const detector = document.getElementById('detectorType').value;
+  const modelName = document.getElementById('modelNameInput').value.trim() || null;
   const regionObjects = parseTextareaList(document.getElementById('objectsInput').value);
   const answer1Objects = parseTextareaList(document.getElementById('answer1ObjectsInput').value);
   const answer2Objects = parseTextareaList(document.getElementById('answer2ObjectsInput').value);
@@ -1357,6 +1367,7 @@ function readDetectorDraftFromInputs() {
 
   return {
     detector,
+    model_name: modelName,
     voting_mode: votingMode,
     region_objects: regionObjects,
     answer_objects: {
@@ -1371,6 +1382,7 @@ function readDetectorDraftFromInputs() {
 function getDetectorSignature(payload) {
   return [
     payload.detector,
+    payload.model_name || '',
     payload.voting_mode,
     payload.threshold,
     payload.frame_skip,
@@ -1405,6 +1417,7 @@ function syncDetectorInputsFromState(nextState) {
   if (!nextState || !nextState.detector) return;
   const votingModeInput = document.getElementById('votingMode');
   const detectorTypeInput = document.getElementById('detectorType');
+  const modelNameInput = document.getElementById('modelNameInput');
   const objectsInput = document.getElementById('objectsInput');
   const answer1ObjectsInput = document.getElementById('answer1ObjectsInput');
   const answer2ObjectsInput = document.getElementById('answer2ObjectsInput');
@@ -1413,6 +1426,7 @@ function syncDetectorInputsFromState(nextState) {
 
   const serverPayload = {
     detector: nextState.detector.type || detectorTypeInput.value,
+    model_name: nextState.detector.model_name || null,
     voting_mode: nextState.detector.voting_mode || votingModeInput.value || 'region_slots',
     region_objects: Array.isArray(nextState.detector.region_objects) ? nextState.detector.region_objects : [],
     answer_objects: {
@@ -1440,6 +1454,9 @@ function syncDetectorInputsFromState(nextState) {
   }
   if (document.activeElement !== detectorTypeInput) {
     detectorTypeInput.value = nextState.detector.type || detectorTypeInput.value;
+  }
+  if (document.activeElement !== modelNameInput) {
+    modelNameInput.value = nextState.detector.model_name || '';
   }
   if (document.activeElement !== objectsInput) {
     objectsInput.value = (nextState.detector.region_objects || []).join('\n');
@@ -1781,6 +1798,204 @@ async function fetchState() {
   drawOverlay();
 }
 
+function normalizedRegionsForConfiguration() {
+  const width = Number(state?.frame?.width);
+  const height = Number(state?.frame?.height);
+  if (!(width > 0) || !(height > 0)) {
+    throw new Error('Camera frame dimensions are not available yet');
+  }
+  return regions.map((region) => ({
+    id: Number(region.id),
+    answer_slot: Number(region.answer_slot || 1),
+    criterion: region.criterion || 'overlap',
+    points: (region.points || []).map(([x, y]) => [
+      Number((Number(x) / Math.max(1, width - 1)).toFixed(8)),
+      Number((Number(y) / Math.max(1, height - 1)).toFixed(8)),
+    ]),
+  }));
+}
+
+function buildConfigurationPayload() {
+  const detector = readDetectorDraftFromInputs();
+  const voting = readVotingConfigPayloadFromInputs();
+  if (!isValidDetectorPayload(detector) || !voting) {
+    throw new Error('Correct invalid detector or voting values before saving');
+  }
+
+  return {
+    format: 'detect-and-vote-configuration',
+    version: 1,
+    detector,
+    regions: {
+      coordinate_space: 'normalized',
+      items: normalizedRegionsForConfiguration(),
+    },
+    slot_colors: {
+      1: document.getElementById('answer1Color').value,
+      2: document.getElementById('answer2Color').value,
+    },
+    voting,
+    web_ui: {
+      update_interval_ms: updateIntervalMs,
+      mirror_view: mirrorEnabled,
+      show_detection_label: showDetectionLabel,
+      panel_visibility: collectPanelVisibilityFromInputs(),
+    },
+  };
+}
+
+function downloadConfiguration() {
+  const payload = buildConfigurationPayload();
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
+  const link = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  link.href = URL.createObjectURL(blob);
+  link.download = `detect-and-vote-config-${date}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+async function postConfigurationPart(url, payload, label) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await readJsonResponse(resp, `${label} returned an invalid response`);
+  if (!resp.ok || data?.status !== 'success') {
+    throw new Error(data?.message || `${label} failed with HTTP ${resp.status}`);
+  }
+  return data;
+}
+
+function regionsFromConfiguration(regionConfig) {
+  if (!regionConfig || regionConfig.coordinate_space !== 'normalized' || !Array.isArray(regionConfig.items)) {
+    throw new Error('The configuration has no valid normalized answer regions');
+  }
+  const width = Number(state?.frame?.width);
+  const height = Number(state?.frame?.height);
+  if (!(width > 0) || !(height > 0)) {
+    throw new Error('Camera frame dimensions are not available yet');
+  }
+
+  const seenIds = new Set();
+  return regionConfig.items.map((region) => {
+    const id = Number(region.id);
+    const answerSlot = Number(region.answer_slot);
+    const criterion = String(region.criterion || '');
+    if (!Number.isInteger(id) || id < 1 || seenIds.has(id)) {
+      throw new Error(`Region ${region.id ?? '?'} has an invalid or duplicate id`);
+    }
+    seenIds.add(id);
+    if (![1, 2].includes(answerSlot) || !['inside', 'overlap'].includes(criterion)) {
+      throw new Error(`Region ${id} has an invalid answer slot or criterion`);
+    }
+    if (!Array.isArray(region.points) || region.points.length < 3) {
+      throw new Error(`Region ${id} has fewer than three points`);
+    }
+    const points = region.points.map((point) => {
+      const x = Number(point?.[0]);
+      const y = Number(point?.[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+        throw new Error(`Region ${id} contains an invalid normalized point`);
+      }
+      return [
+        Math.max(0, Math.min(width - 1, Math.round(x * Math.max(1, width - 1)))),
+        Math.max(0, Math.min(height - 1, Math.round(y * Math.max(1, height - 1)))),
+      ];
+    });
+    return {
+      id,
+      answer_slot: answerSlot,
+      criterion,
+      points,
+    };
+  });
+}
+
+function applyWebUiConfiguration(webUi = {}) {
+  const interval = Math.max(100, Math.min(5000, Math.trunc(Number(webUi.update_interval_ms)) || 650));
+  updateIntervalMs = interval;
+  document.getElementById('updateIntervalInput').value = String(interval);
+  try { localStorage.setItem(UPDATE_INTERVAL_STORAGE_KEY, String(interval)); } catch (_err) { /* ignore */ }
+
+  setMirrorEnabled(Boolean(webUi.mirror_view));
+  showDetectionLabel = webUi.show_detection_label !== false;
+  document.getElementById('showDetectionLabel').checked = showDetectionLabel;
+  try { localStorage.setItem(SHOW_DETECTION_LABEL_STORAGE_KEY, showDetectionLabel ? '1' : '0'); } catch (_err) { /* ignore */ }
+  if (webUi.panel_visibility && typeof webUi.panel_visibility === 'object') {
+    applyPanelVisibility(webUi.panel_visibility);
+  }
+}
+
+async function applyConfiguration(payload) {
+  if (!payload || payload.format !== 'detect-and-vote-configuration' || payload.version !== 1) {
+    throw new Error('This is not a supported Detect & Vote configuration file');
+  }
+  if (!payload.detector || !payload.voting || !payload.slot_colors) {
+    throw new Error('The configuration is missing required settings');
+  }
+  if (!isValidDetectorPayload(payload.detector) || !['owlvit', 'owlv2'].includes(payload.detector.detector)) {
+    throw new Error('The configuration contains invalid detector settings');
+  }
+  const threshold = Number(payload.detector.threshold);
+  if (threshold < 0 || threshold > 1) {
+    throw new Error('The detector threshold must be between 0 and 1');
+  }
+  const voting = payload.voting;
+  if (![voting.vote_duration_sec, voting.pause_duration_sec, voting.pre_question_countdown_sec, voting.window_size].every(Number.isInteger)
+      || voting.vote_duration_sec <= 5 || voting.pause_duration_sec < 0
+      || voting.pre_question_countdown_sec < 0 || voting.window_size < 1) {
+    throw new Error('The configuration contains invalid voting timing values');
+  }
+  for (const slot of ['1', '2']) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(payload.slot_colors[slot] || ''))) {
+      throw new Error(`Answer ${slot} has an invalid color`);
+    }
+  }
+
+  const importedRegions = regionsFromConfiguration(payload.regions);
+  await postConfigurationPart('/apply_settings', payload.detector, 'Detector settings');
+  const regionResult = await postConfigurationPart('/set_regions', { regions: importedRegions }, 'Answer regions');
+  await postConfigurationPart('/set_slot_colors', { slot_colors: payload.slot_colors }, 'Answer colors');
+  await postConfigurationPart('/voting_config', payload.voting, 'Voting settings');
+
+  setRegions(regionResult.regions || importedRegions);
+  regionsDirty = false;
+  applyWebUiConfiguration(payload.web_ui || {});
+  detectorInputsInitialized = false;
+  lastVotingConfigSignature = null;
+  await fetchState();
+  flash('Configuration loaded. Question datasets were left unchanged.');
+}
+
+document.getElementById('saveConfiguration').addEventListener('click', () => {
+  try {
+    downloadConfiguration();
+    flash('Configuration JSON saved.');
+  } catch (error) {
+    flash(`Configuration save failed: ${error.message}`);
+  }
+});
+
+document.getElementById('loadConfiguration').addEventListener('click', () => {
+  document.getElementById('configurationFile').click();
+});
+
+document.getElementById('configurationFile').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    await applyConfiguration(payload);
+  } catch (error) {
+    flash(`Configuration load failed: ${error.message}`);
+  }
+});
+
 canvas.addEventListener('pointerdown', (ev) => {
   const region = getSelectedRegion();
   if (!region) return;
@@ -1936,6 +2151,7 @@ document.getElementById('votingMode').addEventListener('change', () => {
   queueDetectorSave();
 });
 document.getElementById('detectorType').addEventListener('change', queueDetectorSave);
+document.getElementById('modelNameInput').addEventListener('change', queueDetectorSave);
 document.getElementById('objectsInput').addEventListener('input', queueDetectorSave);
 document.getElementById('objectsInput').addEventListener('change', queueDetectorSave);
 document.getElementById('answer1ObjectsInput').addEventListener('input', queueDetectorSave);
