@@ -411,6 +411,14 @@ button:hover {
   text-shadow: 0 10px 30px rgba(19, 111, 99, 0.28);
 }
 
+.countdown-tip {
+  max-width: 720px;
+  padding: 0 24px;
+  font-size: var(--vote-text-size);
+  line-height: 1.4;
+  color: #43546c;
+}
+
 
 .voting-answers-container {
   display: grid;

@@ -54,6 +54,8 @@ window.DETECT_AND_VOTE_TRANSLATIONS.en = {
   'voting.showYourVote': 'Show your vote!',
   'voting.chooseYourVote': 'Choose your vote!',
   'voting.getReady': 'Get ready',
+  'voting.tip.countAtEnd': 'Votes are counted when the timer runs out.',
+  'voting.tip.videoPrivacy': 'The video stream is processed only to count votes; it is never recorded.',
   'voting.recentAccuracy': 'Recent accuracy:',
   'voting.nextQuestion': 'Next question in {value}s',
   'questions.files': 'Question Files',

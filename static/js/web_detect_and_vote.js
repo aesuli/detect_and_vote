@@ -55,6 +55,13 @@ let currentQuestionSource = null;
 let questionSources = [];
 let questionLoadInFlight = false;
 let questionLoadQueued = false;
+let countdownTipKey = null;
+let previousCountdownTipKey = null;
+
+const COUNTDOWN_TIP_KEYS = [
+  'voting.tip.countAtEnd',
+  'voting.tip.videoPrivacy',
+];
 
 const translations = window.DETECT_AND_VOTE_TRANSLATIONS || {};
 
@@ -1220,6 +1227,7 @@ function updateCountdownPhaseDisplay(votingData) {
   const countChipsHost = document.getElementById('countChips');
   const voteStatsHost = document.getElementById('voteStats');
   const votingTimer = document.getElementById('votingTimer');
+  const countdownTip = document.getElementById('countdownTip');
 
   // Hide other displays
   votingPhaseDisplay.style.display = 'none';
@@ -1238,6 +1246,13 @@ function updateCountdownPhaseDisplay(votingData) {
 
   const countdownValue = Math.max(1, Math.ceil(Number(votingData.time_left_sec ?? 0)));
   document.getElementById('countdownNumber').textContent = String(countdownValue);
+  if (countdownTipKey === null) {
+    const availableTipKeys = COUNTDOWN_TIP_KEYS.filter((key) => key !== previousCountdownTipKey);
+    countdownTipKey = availableTipKeys[Math.floor(Math.random() * availableTipKeys.length)]
+      || COUNTDOWN_TIP_KEYS[0];
+    previousCountdownTipKey = countdownTipKey;
+  }
+  countdownTip.textContent = t(countdownTipKey);
 }
 
 function updatePausePhaseDisplay(votingData, slotCounts) {
@@ -1341,6 +1356,10 @@ function updateVotingDisplay(votingData, slotCounts) {
   const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
   const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
   const votingTimer = document.getElementById('votingTimer');
+
+  if (!votingData.active || votingData.phase !== 'countdown') {
+    countdownTipKey = null;
+  }
 
   if (!votingData.active) {
     currentQuestionSource = null;

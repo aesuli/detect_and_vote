@@ -54,6 +54,8 @@ window.DETECT_AND_VOTE_TRANSLATIONS.it = {
   'voting.showYourVote': 'Mostra il tuo voto!',
   'voting.chooseYourVote': 'Scegli il tuo voto!',
   'voting.getReady': 'Preparati',
+  'voting.tip.countAtEnd': 'I voti vengono conteggiati allo scadere del tempo.',
+  'voting.tip.videoPrivacy': 'Il video viene elaborato solo per conteggiare i voti e non viene mai registrato.',
   'voting.recentAccuracy': 'Accuratezza recente:',
   'voting.nextQuestion': 'Prossima domanda tra {value}s',
   'questions.files': 'File delle domande',
