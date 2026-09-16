@@ -1144,6 +1144,8 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
   const pausePhaseDisplay = document.getElementById('pausePhaseDisplay');
   const idlePhaseDisplay = document.getElementById('idlePhaseDisplay');
   const votingTimer = document.getElementById('votingTimer');
+  const votingTimeLeft = document.getElementById('votingTimeLeft');
+  const votingTimerPrompt = document.getElementById('votingTimerPrompt');
 
   // Hide other displays
   countdownPhaseDisplay.style.display = 'none';
@@ -1199,8 +1201,14 @@ function updateVotingPhaseDisplay(votingData, slotCounts) {
     
     // Update timer
     const timeLeft = votingData.time_left_sec || 0;
-    votingTimer.textContent = t('voting.timeLeft', { value: timeLeft });
-    votingTimer.classList.toggle('urgent', timeLeft <= 5);
+    const isUrgent = timeLeft <= 5;
+    const promptKey = getVotingMode() === 'object_lists'
+      ? 'voting.showYourVote'
+      : 'voting.chooseYourVote';
+    votingTimeLeft.textContent = t('voting.timeLeft', { value: timeLeft });
+    votingTimerPrompt.textContent = t(promptKey);
+    votingTimer.classList.toggle('urgent', isUrgent);
+    votingTimerPrompt.hidden = !isUrgent;
   }
 }
 

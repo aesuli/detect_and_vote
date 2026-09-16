@@ -51,6 +51,8 @@ window.DETECT_AND_VOTE_TRANSLATIONS.en = {
   'voting.start': 'Start Voting',
   'voting.stop': 'Stop Voting',
   'voting.timeLeft': 'Time left: {value}s',
+  'voting.showYourVote': 'Show your vote!',
+  'voting.chooseYourVote': 'Choose your vote!',
   'voting.getReady': 'Get ready',
   'voting.recentAccuracy': 'Recent accuracy:',
   'voting.nextQuestion': 'Next question in {value}s',

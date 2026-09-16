@@ -479,6 +479,13 @@ button:hover {
   animation: voting-timer-pulse 0.9s ease-in-out infinite;
 }
 
+.voting-timer-prompt {
+  margin-top: 4px;
+  font-size: var(--vote-heading-size);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 @keyframes voting-timer-pulse {
   0% {
     transform: scale(1);

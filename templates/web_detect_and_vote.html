@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/web_detect_and_vote.css">
+  <link rel="stylesheet" href="/static/css/web_detect_and_vote.css?v=2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -185,7 +185,10 @@
               <div class="answer-count" id="answerCount2">0</div>
             </div>
           </div>
-          <div class="voting-timer" id="votingTimer" data-i18n="voting.timeLeft" data-i18n-value="30">Time left: 30s</div>
+          <div class="voting-timer" id="votingTimer">
+            <div id="votingTimeLeft" data-i18n="voting.timeLeft" data-i18n-value="30">Time left: 30s</div>
+            <div class="voting-timer-prompt" id="votingTimerPrompt" hidden data-i18n="voting.showYourVote">Show your vote!</div>
+          </div>
         </div>
 
         <!-- Pre-Question Countdown Display -->
@@ -233,8 +236,8 @@
     <span class="footer-short">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://www.cnr.it/">CNR</a></span>
     <span class="footer-full">© 2026 <a href="https://esuli.it">Andrea Esuli</a> / <a href="https://hlt-isti.github.io/">AI4Text</a> / <a href="https://aimh.isti.cnr.it/">AIMH</a> / <a href="https://www.isti.cnr.it/">ISTI</a> / <a href="https://www.cnr.it/">CNR</a></span>
   </footer>
-  <script src="/static/js/locales/en.js?v=1"></script>
-  <script src="/static/js/locales/it.js?v=1"></script>
-  <script src="/static/js/web_detect_and_vote.js?v=3" data-update-interval="250"></script>
+  <script src="/static/js/locales/en.js?v=3"></script>
+  <script src="/static/js/locales/it.js?v=3"></script>
+  <script src="/static/js/web_detect_and_vote.js?v=5" data-update-interval="250"></script>
 </body>
 </html>
