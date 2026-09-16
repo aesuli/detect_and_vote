@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 
+import cv2
 import torch
 from transformers import Owlv2ForObjectDetection, Owlv2Processor,  OwlViTForObjectDetection, OwlViTProcessor
 
@@ -104,7 +105,13 @@ class OwlDetector(ABC):
         threshold = float(self.threshold)
 
         texts = [objects]
-        inputs = self.processor(images=frame, text=texts, return_tensors="pt")
+
+        # Frames supplied by OpenCV are BGR, while Hugging Face image
+        # processors interpret NumPy arrays as RGB.  Passing the frame through
+        # unchanged reverses red and blue and can consequently reverse
+        # color-based object labels (and the votes mapped from those labels).
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        inputs = self.processor(images=rgb_frame, text=texts, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
