@@ -29,6 +29,7 @@ window.DETECT_AND_VOTE_TRANSLATIONS.it = {
   'detection.frameSkip': 'Salto fotogrammi',
   'detection.updateInterval': 'Intervallo di aggiornamento (ms)',
   'detection.showLabel': 'Mostra etichetta e confidenza',
+  'detection.showAnswer': 'Mostra risposta assegnata',
   'detection.mirrorView': 'Specchia vista fotocamera',
   'regions.title': 'Regioni',
   'regions.regionModeHint': 'In modalita regioni ogni regione e assegnata a una risposta.',

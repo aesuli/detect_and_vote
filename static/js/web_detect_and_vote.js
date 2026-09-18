@@ -41,9 +41,11 @@ let canvasDisplayHeight = 1;
 let resizeSyncFrameHandle = null;
 let mirrorEnabled = false;
 let showDetectionLabel = true;
+let showDetectionAnswer = true;
 
 const MIRROR_VIEW_STORAGE_KEY = 'look_and_detect_mirror_view';
 const SHOW_DETECTION_LABEL_STORAGE_KEY = 'look_and_detect_show_detection_label';
+const SHOW_DETECTION_ANSWER_STORAGE_KEY = 'look_and_detect_show_detection_answer';
 const PANEL_VISIBILITY_STORAGE_KEY = 'look_and_detect_panel_visibility';
 const UPDATE_INTERVAL_STORAGE_KEY = 'look_and_detect_update_interval';
 const LANGUAGE_STORAGE_KEY = 'look_and_detect_language';
@@ -577,6 +579,27 @@ function initializeShowDetectionLabelControl() {
   });
 }
 
+function initializeShowDetectionAnswerControl() {
+  const input = document.getElementById('showDetectionAnswer');
+  if (!input) return;
+
+  try {
+    const stored = localStorage.getItem(SHOW_DETECTION_ANSWER_STORAGE_KEY);
+    if (stored !== null) {
+      showDetectionAnswer = stored !== '0';
+    }
+  } catch (_err) { /* ignore */ }
+
+  input.checked = showDetectionAnswer;
+  input.addEventListener('change', () => {
+    showDetectionAnswer = input.checked;
+    try {
+      localStorage.setItem(SHOW_DETECTION_ANSWER_STORAGE_KEY, showDetectionAnswer ? '1' : '0');
+    } catch (_err) { /* ignore */ }
+    drawOverlay();
+  });
+}
+
 function initializeUpdateIntervalControl() {
   const input = document.getElementById('updateIntervalInput');
   if (!input) return;
@@ -955,28 +978,36 @@ function drawDetections() {
     const voteSlot = Number((det.vote_slot ?? det.region_answer_slot) || 0);
     const color = voteSlot ? getSlotColor(voteSlot) : '#b9c0ce';
     const assignedText = describeAssignment(det);
-    const caption = showDetectionLabel
-      ? `${det.label} ${Number(det.score || 0).toFixed(2)} -> ${assignedText}`
-      : assignedText;
+    const labelPart = `${det.label} ${Number(det.score || 0).toFixed(2)}`;
+    let caption = '';
+    if (showDetectionLabel && showDetectionAnswer) {
+      caption = `${labelPart} -> ${assignedText}`;
+    } else if (showDetectionLabel) {
+      caption = labelPart;
+    } else if (showDetectionAnswer) {
+      caption = assignedText;
+    }
 
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(1.5, Math.min(3, displayWidth / 640));
     ctx.strokeRect(dx, dy, dw, dh);
 
-    ctx.font = `600 ${fontPx}px "Space Grotesk", sans-serif`;
-    const textPaddingX = 8;
-    const textPaddingY = 4;
-    const textMetrics = ctx.measureText(caption);
-    const textWidth = Math.ceil(textMetrics.width);
-    const boxHeight = fontPx + textPaddingY * 2;
-    const boxY = Math.max(0, dy - boxHeight - 4);
-    const boxX = Math.max(0, dx);
+    if (caption) {
+      ctx.font = `600 ${fontPx}px "Space Grotesk", sans-serif`;
+      const textPaddingX = 8;
+      const textPaddingY = 4;
+      const textMetrics = ctx.measureText(caption);
+      const textWidth = Math.ceil(textMetrics.width);
+      const boxHeight = fontPx + textPaddingY * 2;
+      const boxY = Math.max(0, dy - boxHeight - 4);
+      const boxX = Math.max(0, dx);
 
-    ctx.fillStyle = color;
-    ctx.fillRect(boxX, boxY, textWidth + textPaddingX * 2, boxHeight);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(caption, boxX + textPaddingX, boxY + fontPx + textPaddingY - 2);
+      ctx.fillStyle = color;
+      ctx.fillRect(boxX, boxY, textWidth + textPaddingX * 2, boxHeight);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(caption, boxX + textPaddingX, boxY + fontPx + textPaddingY - 2);
+    }
     ctx.restore();
   });
 }
@@ -1918,6 +1949,7 @@ function buildConfigurationPayload() {
       update_interval_ms: updateIntervalMs,
       mirror_view: mirrorEnabled,
       show_detection_label: showDetectionLabel,
+      show_detection_answer: showDetectionAnswer,
       panel_visibility: collectPanelVisibilityFromInputs(),
     },
   };
@@ -2004,6 +2036,9 @@ function applyWebUiConfiguration(webUi = {}) {
   showDetectionLabel = webUi.show_detection_label !== false;
   document.getElementById('showDetectionLabel').checked = showDetectionLabel;
   try { localStorage.setItem(SHOW_DETECTION_LABEL_STORAGE_KEY, showDetectionLabel ? '1' : '0'); } catch (_err) { /* ignore */ }
+  showDetectionAnswer = webUi.show_detection_answer !== false;
+  document.getElementById('showDetectionAnswer').checked = showDetectionAnswer;
+  try { localStorage.setItem(SHOW_DETECTION_ANSWER_STORAGE_KEY, showDetectionAnswer ? '1' : '0'); } catch (_err) { /* ignore */ }
   if (webUi.panel_visibility && typeof webUi.panel_visibility === 'object') {
     applyPanelVisibility(webUi.panel_visibility);
   }
@@ -2278,6 +2313,7 @@ if (typeof ResizeObserver !== 'undefined') {
 
 initializeLanguageControl();
 initializeShowDetectionLabelControl();
+initializeShowDetectionAnswerControl();
 initializeMirrorViewControl();
 initializeUpdateIntervalControl();
 initializePanelVisibilityControls();

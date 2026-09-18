@@ -29,6 +29,7 @@ window.DETECT_AND_VOTE_TRANSLATIONS.en = {
   'detection.frameSkip': 'Frame Skip',
   'detection.updateInterval': 'Update Interval (ms)',
   'detection.showLabel': 'Show label & confidence',
+  'detection.showAnswer': 'Show assigned answer',
   'detection.mirrorView': 'Mirror camera view',
   'regions.title': 'Regions',
   'regions.regionModeHint': 'In region-based mode each region is assigned to an answer.',
