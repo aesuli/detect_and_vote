@@ -950,6 +950,14 @@ function getAnswerSlotName(slot, { preferQuestionAnswer = false } = {}) {
   return t(normalizedSlot === 2 ? 'common.answer2' : 'common.answer1');
 }
 
+function getAnswerSlotForResultText(lastResult, text) {
+  if (!lastResult || !text) return null;
+  const answers = lastResult.question?.answers;
+  if (!Array.isArray(answers)) return null;
+  const idx = answers.indexOf(text);
+  return idx === -1 ? null : idx + 1;
+}
+
 function syncRegionEditorFromSelected() {
   const region = getSelectedRegion();
   document.getElementById('regionAnswerSlot').value = region ? String(region.answer_slot || 1) : '1';
@@ -966,6 +974,9 @@ function drawDetections() {
   const displayWidth = getCanvasDisplayWidth();
   const displayHeight = getCanvasDisplayHeight();
   const fontPx = Math.max(12, Math.round(Math.min(displayWidth, displayHeight) * 0.018));
+  const votingData = state?.voting || {};
+  const lastResult = votingData.phase === 'pause' ? votingData.last_vote_result : null;
+  const correctSlot = getAnswerSlotForResultText(lastResult, lastResult?.question?.correct_answer);
 
   (state.assignments || []).forEach((det) => {
     const [x1, y1, x2, y2] = det.box;
@@ -991,6 +1002,10 @@ function drawDetections() {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(1.5, Math.min(3, displayWidth / 640));
+    if (correctSlot && voteSlot) {
+      ctx.fillStyle = voteSlot === correctSlot ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)';
+      ctx.fillRect(dx, dy, dw, dh);
+    }
     ctx.strokeRect(dx, dy, dw, dh);
 
     if (caption) {

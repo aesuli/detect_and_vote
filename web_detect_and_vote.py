@@ -140,6 +140,7 @@ class ObjectDetectionApp:
 
         self.current_frame = None
         self.current_frame_with_detections = None
+        self._stream_frozen = False
         self.last_detections: List[Dict] = []
         self.last_assignments: List[Dict] = []
 
@@ -1011,14 +1012,25 @@ class ObjectDetectionApp:
                     self._rebuild_region_masks_locked()
 
                 assignments, region_counts, slot_counts = self._assign_detections_locked(detections)
-                self.last_detections = detections
-                self.last_assignments = assignments
-                self.latest_region_counts = region_counts
-                self.latest_slot_counts = slot_counts
-                self._update_history_locked()
-                self._tick_voting_locked()
+                if self.voting_phase == "pause" and self._stream_frozen:
+                    # Keep the overlay data frozen alongside the paused stream frame.
+                    self._tick_voting_locked()
+                else:
+                    self.last_detections = detections
+                    self.last_assignments = assignments
+                    self.latest_region_counts = region_counts
+                    self.latest_slot_counts = slot_counts
+                    self._update_history_locked()
+                    self._tick_voting_locked()
 
-                self.current_frame = frame.copy()
+                if self.voting_phase == "pause":
+                    # Freeze the stream and overlay on the vote-deciding frame until the pause ends.
+                    if not self._stream_frozen:
+                        self.current_frame = frame.copy()
+                        self._stream_frozen = True
+                else:
+                    self._stream_frozen = False
+                    self.current_frame = frame.copy()
                 self.current_frame_with_detections = None
 
             frame_count += 1
