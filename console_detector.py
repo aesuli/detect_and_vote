@@ -2,8 +2,16 @@ import os
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 import cv2
 import argparse
+import json
 from typing import Optional
 from owl_detector import Owlv2Detector, OwlViTDetector
+
+
+def load_configuration(path: str) -> dict:
+    """Load a JSON configuration file and normalize keys to argparse dest names."""
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    return {key.replace("-", "_"): value for key, value in config.items()}
 
 def render_detections_on_frame(frame, detections):
     """
@@ -195,6 +203,15 @@ if __name__ == '__main__':
                         help="Save the video of the detection to a file. Use .mp4 (mp4v) or .avi (MJPG), e.g. output.mp4")
     parser.add_argument('--fps', type=float, default=None,
                         help="Frames per second for output file. If omitted, use camera FPS or 20.0 fallback.")
+    parser.add_argument('-c', '--configuration',
+                        help="Path to a JSON configuration file providing default values for the other options "
+                             "(command-line arguments still take precedence)")
+
+    # First pass: only look for --configuration, so its values can seed the defaults.
+    config_args, _ = parser.parse_known_args()
+    if config_args.configuration:
+        parser.set_defaults(**load_configuration(config_args.configuration))
+
     args = parser.parse_args()
 
     if args.list_video_devices:

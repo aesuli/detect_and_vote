@@ -25,6 +25,80 @@ from cherrypy.process.plugins import SignalHandler
 from owl_detector import Owlv2Detector, OwlViTDetector
 
 
+CONFIGURATION_FORMAT = "detect-and-vote-configuration"
+CONFIGURATION_VERSION = 1
+
+
+def _denormalize_regions(region_config: Any, frame_width: int, frame_height: int) -> List[Dict]:
+    """Convert the normalized region points saved by the web UI back to pixel coordinates."""
+    if not isinstance(region_config, dict) or region_config.get("coordinate_space") != "normalized":
+        raise ValueError("The configuration has no valid normalized answer regions")
+    items = region_config.get("items")
+    if not isinstance(items, list):
+        raise ValueError("The configuration has no valid normalized answer regions")
+
+    regions = []
+    seen_ids = set()
+    for region in items:
+        rid = region.get("id")
+        answer_slot = region.get("answer_slot")
+        criterion = region.get("criterion")
+        points = region.get("points")
+        if not isinstance(rid, int) or rid < 1 or rid in seen_ids:
+            raise ValueError(f"Region {rid} has an invalid or duplicate id")
+        seen_ids.add(rid)
+        if answer_slot not in (1, 2) or criterion not in ("inside", "overlap"):
+            raise ValueError(f"Region {rid} has an invalid answer slot or criterion")
+        if not isinstance(points, list) or len(points) < 3:
+            raise ValueError(f"Region {rid} has fewer than three points")
+
+        pixel_points = []
+        for point in points:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError(f"Region {rid} contains an invalid normalized point")
+            x, y = float(point[0]), float(point[1])
+            if not (0 <= x <= 1) or not (0 <= y <= 1):
+                raise ValueError(f"Region {rid} contains an invalid normalized point")
+            px = max(0, min(frame_width - 1, round(x * max(1, frame_width - 1))))
+            py = max(0, min(frame_height - 1, round(y * max(1, frame_height - 1))))
+            pixel_points.append([px, py])
+
+        regions.append({"id": rid, "answer_slot": answer_slot, "criterion": criterion, "points": pixel_points})
+    return regions
+
+
+def apply_configuration_file(app: "ObjectDetectionApp", path: str) -> None:
+    """Apply a JSON configuration exported via the web UI's "Save JSON" button at startup."""
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    if config.get("format") != CONFIGURATION_FORMAT or config.get("version") != CONFIGURATION_VERSION:
+        raise ValueError("This is not a supported Detect & Vote configuration file")
+
+    detector_payload = config.get("detector")
+    voting_payload = config.get("voting")
+    slot_colors_payload = config.get("slot_colors")
+    if not detector_payload or not voting_payload or not slot_colors_payload:
+        raise ValueError("The configuration is missing required settings")
+
+    result = app._apply_detector_settings(detector_payload)
+    if result.get("status") != "success":
+        raise ValueError(f"Detector settings: {result.get('message')}")
+
+    regions = _denormalize_regions(config.get("regions"), app.frame_width, app.frame_height)
+    result = app._apply_regions(regions)
+    if result.get("status") != "success":
+        raise ValueError(f"Answer regions: {result.get('message')}")
+
+    result = app._apply_slot_colors(slot_colors_payload)
+    if result.get("status") != "success":
+        raise ValueError(f"Answer colors: {result.get('message')}")
+
+    result = app._apply_voting_config(voting_payload)
+    if result.get("status") != "success":
+        raise ValueError(f"Voting configuration: {result.get('message')}")
+
+
 class ObjectDetectionApp:
     """CherryPy app for detection, region counting, and quiz voting."""
 
@@ -1105,6 +1179,9 @@ class ObjectDetectionApp:
     @cherrypy.tools.json_out()
     def apply_settings(self):
         payload = self._read_json_body()
+        return self._apply_detector_settings(payload)
+
+    def _apply_detector_settings(self, payload: Dict) -> Dict:
         try:
             detector = payload.get("detector", self.detector_type)
             model_name = payload.get("model_name", self.model_name)
@@ -1158,6 +1235,9 @@ class ObjectDetectionApp:
     def set_regions(self):
         payload = self._read_json_body()
         incoming = payload.get("regions", [])
+        return self._apply_regions(incoming)
+
+    def _apply_regions(self, incoming) -> Dict:
         if not isinstance(incoming, list):
             return {"status": "error", "message": "regions must be a list"}
 
@@ -1221,6 +1301,9 @@ class ObjectDetectionApp:
     def set_slot_colors(self):
         payload = self._read_json_body()
         incoming = payload.get("slot_colors", {})
+        return self._apply_slot_colors(incoming)
+
+    def _apply_slot_colors(self, incoming) -> Dict:
         if not isinstance(incoming, dict):
             return {"status": "error", "message": "slot_colors must be an object"}
 
@@ -1240,6 +1323,9 @@ class ObjectDetectionApp:
     @cherrypy.tools.json_out()
     def voting_config(self):
         payload = self._read_json_body()
+        return self._apply_voting_config(payload)
+
+    def _apply_voting_config(self, payload: Dict) -> Dict:
         try:
             vote_duration = int(payload.get("vote_duration_sec", self.vote_duration_sec))
             pause_duration = int(payload.get("pause_duration_sec", self.pause_duration_sec))
@@ -1416,6 +1502,7 @@ def main(
     video_device_id: int,
     host: str = "127.0.0.1",
     port: int = 8080,
+    configuration_path: Optional[str] = None,
 ):
     app = ObjectDetectionApp(
         detector_type=detector_type,
@@ -1426,6 +1513,9 @@ def main(
         frame_height=frame_height,
         video_device_id=video_device_id,
     )
+    if configuration_path:
+        apply_configuration_file(app, configuration_path)
+        print(f"Loaded configuration from '{configuration_path}'.")
     app.start_capture()
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -1517,6 +1607,12 @@ if __name__ == "__main__":
         default=8080,
         help="Port to listen on (default: 8080)",
     )
+    parser.add_argument(
+        "-c", "--configuration",
+        help="Path to a JSON configuration file exported from the web UI's \"Save JSON\" button; "
+             "applied at startup (detector, regions, colors, voting settings)",
+    )
+
     args = parser.parse_args()
 
     main(
@@ -1529,4 +1625,5 @@ if __name__ == "__main__":
         args.video_device_id,
         args.host,
         args.port,
+        args.configuration,
     )
