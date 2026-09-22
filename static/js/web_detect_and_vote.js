@@ -1381,13 +1381,23 @@ function updatePausePhaseDisplay(votingData, slotCounts) {
     // Update accuracy display
     const accuracyContainer = document.getElementById('pauseAccuracyContainer');
     const recentVotes = votingData.recent_scored_votes || 0;
-    if (recentVotes > 0 && votingData.accuracy_percent !== null) {
+    if (recentVotes > 0 && votingData.majority_vote_accuracy_percent !== null) {
       accuracyContainer.style.display = 'block';
-      const accuracy = votingData.accuracy_percent;
-      document.getElementById('pauseAccuracyLabel').textContent = t('common.recentAccuracyQuestions', { value: recentVotes });
+      const accuracy = votingData.majority_vote_accuracy_percent;
+      document.getElementById('pauseAccuracyLabel').textContent = t('common.recentMajorityVoteAccuracyQuestions', { value: recentVotes });
       document.getElementById('pauseAccuracyValue').textContent = `${accuracy}%`;
     } else {
       accuracyContainer.style.display = 'none';
+    }
+
+    const singleVoteAccuracyContainer = document.getElementById('pauseSingleVoteAccuracyContainer');
+    if (recentVotes > 0 && votingData.single_vote_accuracy_percent !== null) {
+      singleVoteAccuracyContainer.style.display = 'block';
+      const singleVoteAccuracy = votingData.single_vote_accuracy_percent;
+      document.getElementById('pauseSingleVoteAccuracyLabel').textContent = t('common.recentSingleVoteAccuracyQuestions', { value: recentVotes });
+      document.getElementById('pauseSingleVoteAccuracyValue').textContent = `${singleVoteAccuracy}%`;
+    } else {
+      singleVoteAccuracyContainer.style.display = 'none';
     }
     
     // Update countdown
@@ -1468,9 +1478,11 @@ function refreshVoting(v) {
 
   // Keep the stats for idle phase
   const statHost = document.getElementById('voteStats');
-  const acc = v.accuracy_percent === null ? 'n/a' : `${v.accuracy_percent}%`;
+  const majorityAcc = v.majority_vote_accuracy_percent === null ? 'n/a' : `${v.majority_vote_accuracy_percent}%`;
+  const singleAcc = v.single_vote_accuracy_percent === null ? 'n/a' : `${v.single_vote_accuracy_percent}%`;
   statHost.innerHTML = [
-    `<div class="chip">${t('common.accuracy')}: ${acc}</div>`,
+    `<div class="chip">${t('common.majorityVoteAccuracy')}: ${majorityAcc}</div>`,
+    `<div class="chip">${t('common.singleVoteAccuracy')}: ${singleAcc}</div>`,
     `<div class="chip">${t('common.scoredVotes')}: ${v.recent_scored_votes}</div>`,
   ].join('');
   statHost.style.display = v.active ? 'none' : 'flex';
@@ -1755,6 +1767,25 @@ function getSelectedQuestionSources() {
   return questionSources.filter((entry) => entry.selected).map((entry) => entry.name);
 }
 
+function syncQuestionSourcesFromState(nextState) {
+  const serverSelected = nextState?.question_sources?.selected;
+  if (!Array.isArray(serverSelected) || !questionSources.length) return;
+  if (questionLoadInFlight || questionLoadQueued) return;
+
+  const host = document.getElementById('questionSources');
+  if (host && host.contains(document.activeElement)) return;
+
+  const serverSet = new Set(serverSelected);
+  const localSet = new Set(getSelectedQuestionSources());
+  const isSameSelection = serverSet.size === localSet.size && [...serverSet].every((name) => localSet.has(name));
+  if (isSameSelection) return;
+
+  questionSources.forEach((entry) => {
+    entry.selected = serverSet.has(entry.name);
+  });
+  renderQuestionSources();
+}
+
 function renderQuestionSources() {
   const host = document.getElementById('questionSources');
   if (!host) return;
@@ -1909,6 +1940,7 @@ async function fetchState() {
 
   state = nextState;
   syncDetectorInputsFromState(nextState);
+  syncQuestionSourcesFromState(nextState);
   slotColors = {
     1: nextState.slot_colors?.['1'] || slotColors[1],
     2: nextState.slot_colors?.['2'] || slotColors[2],

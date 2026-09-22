@@ -57,7 +57,8 @@ window.DETECT_AND_VOTE_TRANSLATIONS.it = {
   'voting.getReady': 'Preparati',
   'voting.tip.countAtEnd': 'I voti vengono conteggiati allo scadere del tempo.',
   'voting.tip.videoPrivacy': 'Il video viene elaborato solo per conteggiare i voti e non viene mai registrato.',
-  'voting.recentAccuracy': 'Accuratezza recente:',
+  'voting.recentMajorityVoteAccuracy': 'Accuratezza recente per voto di maggioranza:',
+  'voting.recentSingleVoteAccuracy': 'Accuratezza recente per singolo voto:',
   'voting.nextQuestion': 'Prossima domanda tra {value}s',
   'questions.files': 'File delle domande',
   'questions.loading': 'Caricamento file...',
@@ -76,6 +77,8 @@ window.DETECT_AND_VOTE_TRANSLATIONS.it = {
   'common.noLabeledCounts': 'Nessun conteggio etichettato',
   'common.notSpecified': 'Non specificato',
   'common.accuracy': 'Accuratezza',
+  'common.majorityVoteAccuracy': 'Accuratezza per voto di maggioranza',
+  'common.singleVoteAccuracy': 'Accuratezza per singolo voto',
   'common.scoredVotes': 'Voti valutati',
   'common.correct': 'Corretto!',
   'common.wrong': 'Errato',
@@ -83,5 +86,7 @@ window.DETECT_AND_VOTE_TRANSLATIONS.it = {
   'common.resultUnknown': 'Risultato sconosciuto',
   'common.correctAnswer': 'Risposta corretta:',
   'common.nextQuestion': 'Prossima domanda tra {value}s',
-  'common.recentAccuracyQuestions': 'Accuratezza recente (ultime {value} domande):'
+  'common.recentAccuracyQuestions': 'Accuratezza recente (ultime {value} domande):',
+  'common.recentMajorityVoteAccuracyQuestions': 'Accuratezza recente per voto di maggioranza (ultime {value} domande):',
+  'common.recentSingleVoteAccuracyQuestions': 'Accuratezza recente per singolo voto (ultime {value} domande):'
 };

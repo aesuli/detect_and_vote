@@ -161,7 +161,7 @@ class OwlViTDetector(OwlDetector):
 class Owlv2Detector(OwlDetector):
     """OWL-v2 object detector implementation."""
     
-    DEFAULT_MODEL_NAME = "google/owlv2-base-patch16-ensemble"
+    DEFAULT_MODEL_NAME = "google/owlv2-base-patch16-finetuned"
 
     def load_model_and_processor(self):
         """

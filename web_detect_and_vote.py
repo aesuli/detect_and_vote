@@ -67,10 +67,16 @@ def _denormalize_regions(region_config: Any, frame_width: int, frame_height: int
     return regions
 
 
-def apply_configuration_file(app: "ObjectDetectionApp", path: str) -> None:
-    """Apply a JSON configuration exported via the web UI's "Save JSON" button at startup."""
+def load_configuration_file(path: str) -> Dict:
+    """Load a JSON configuration exported via the web UI's "Save JSON" button."""
     with open(path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+        return json.load(f)
+
+
+def apply_configuration_file(app: "ObjectDetectionApp", path: str, config: Optional[Dict] = None) -> None:
+    """Apply a JSON configuration exported via the web UI's "Save JSON" button at startup."""
+    if config is None:
+        config = load_configuration_file(path)
 
     if config.get("format") != CONFIGURATION_FORMAT or config.get("version") != CONFIGURATION_VERSION:
         raise ValueError("This is not a supported Detect & Vote configuration file")
@@ -159,6 +165,7 @@ class ObjectDetectionApp:
         self.data_dir = os.path.join(self.app_root, "data")
         self.questions_path = self._resolve_data_path(questions_path)
         self.questions = self._load_questions(self.questions_path)
+        self.selected_question_sources: List[str] = [os.path.basename(self.questions_path)]
         self.question_order: List[int] = []
         self.question_cursor = 0
 
@@ -169,6 +176,7 @@ class ObjectDetectionApp:
         self.add_reading_time = False
         self.shuffle_answers = False
         self.vote_results = deque(maxlen=self.vote_window_size)
+        self.single_vote_results = deque(maxlen=self.vote_window_size)
 
         self.voting_active = False
         self.voting_phase = "idle"  # idle | countdown | question | pause
@@ -459,7 +467,7 @@ class ObjectDetectionApp:
             return []
 
         files = []
-        selected_default = os.path.basename(self.questions_path)
+        selected_names = set(self.selected_question_sources)
         for name in sorted(os.listdir(self.data_dir), key=lambda item: (0 if item.lower().endswith(".jsonl") else 1, item.lower())):
             abs_path = os.path.join(self.data_dir, name)
             if not os.path.isfile(abs_path) or not self._supported_question_extension(abs_path):
@@ -467,7 +475,7 @@ class ObjectDetectionApp:
             files.append(
                 {
                     "name": name,
-                    "selected": name == selected_default,
+                    "selected": name in selected_names,
                 }
             )
         return files
@@ -877,6 +885,12 @@ class ObjectDetectionApp:
             is_correct = voted == correct_answer
             self.vote_results.append(1 if is_correct else 0)
 
+        if correct_answer:
+            correct_slot_votes = c0 if correct_answer == a0 else c1 if correct_answer == a1 else 0
+            total_slot_votes = c0 + c1
+            if total_slot_votes > 0:
+                self.single_vote_results.append((correct_slot_votes, total_slot_votes))
+
         self.last_vote_result = {
             "question": self.current_question,
             "counts": {a0: c0, a1: c1},
@@ -959,6 +973,7 @@ class ObjectDetectionApp:
         if window_size != self.vote_window_size:
             self.vote_window_size = window_size
             self.vote_results = deque(list(self.vote_results), maxlen=self.vote_window_size)
+            self.single_vote_results = deque(list(self.single_vote_results), maxlen=self.vote_window_size)
 
     def _stop_voting_locked(self, clear_last_result: bool = False):
         self.voting_active = False
@@ -1070,6 +1085,13 @@ class ObjectDetectionApp:
         if len(self.vote_results) > 0:
             accuracy = round(100.0 * sum(self.vote_results) / len(self.vote_results), 2)
 
+        single_vote_accuracy = None
+        if len(self.single_vote_results) > 0:
+            total_correct = sum(correct for correct, _ in self.single_vote_results)
+            total_votes = sum(total for _, total in self.single_vote_results)
+            if total_votes > 0:
+                single_vote_accuracy = round(100.0 * total_correct / total_votes, 2)
+
         return {
             "active": self.voting_active,
             "phase": self.voting_phase,
@@ -1082,7 +1104,8 @@ class ObjectDetectionApp:
             "add_reading_time": self.add_reading_time,
             "reading_speed_chars_per_sec": self.READING_SPEED_CHARS_PER_SEC,
             "recent_scored_votes": len(self.vote_results),
-            "accuracy_percent": accuracy,
+            "majority_vote_accuracy_percent": accuracy,
+            "single_vote_accuracy_percent": single_vote_accuracy,
             "current_question": self.current_question,
             "last_vote_result": self.last_vote_result,
             "question_pool_size": len(self.questions),
@@ -1129,6 +1152,9 @@ class ObjectDetectionApp:
             "display_counts": self._display_slot_counts_locked(),
             "history": list(self.count_history),
             "voting": self._voting_state_locked(),
+            "question_sources": {
+                "selected": list(self.selected_question_sources),
+            },
         }
         return self._to_json_safe(payload)
 
@@ -1374,6 +1400,7 @@ class ObjectDetectionApp:
     @cherrypy.tools.json_out()
     def voting_questions(self, **_params):
         content_type = str(cherrypy.request.headers.get("Content-Type", "")).lower()
+        selected_names: List[str] = []
 
         if content_type.startswith("application/json"):
             payload = self._read_json_body()
@@ -1429,6 +1456,8 @@ class ObjectDetectionApp:
             self.questions = normalized
             self.question_order = []
             self.question_cursor = 0
+            if selected_names:
+                self.selected_question_sources = selected_names
 
         return {"status": "success", "message": f"Loaded {len(normalized)} questions."}
 
@@ -1516,6 +1545,13 @@ def main(
     port: int = 8080,
     configuration_path: Optional[str] = None,
 ):
+    configuration = load_configuration_file(configuration_path) if configuration_path else None
+    if configuration:
+        detector_payload = configuration.get("detector", {})
+        if isinstance(detector_payload, dict):
+            detector_type = detector_payload.get("detector", detector_type)
+            model_name = detector_payload.get("model_name", model_name)
+
     app = ObjectDetectionApp(
         detector_type=detector_type,
         model_name=model_name,
@@ -1526,7 +1562,7 @@ def main(
         video_device_id=video_device_id,
     )
     if configuration_path:
-        apply_configuration_file(app, configuration_path)
+        apply_configuration_file(app, configuration_path, configuration)
         print(f"Loaded configuration from '{configuration_path}'.")
     app.start_capture()
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")

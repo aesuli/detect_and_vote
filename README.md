@@ -61,7 +61,7 @@ The app supports a few startup flags for the camera and detector setup:
 ```bash
 python web_detect_and_vote.py \
   --detector owlv2 \
-  --model-name "google/owlv2-base-patch16-ensemble" \
+  --model-name "google/owlv2-base-patch16-finetuned" \
   --objects "a person" "human face" "a hand" \
   --threshold 0.17 \
   --frame-width 960 \
