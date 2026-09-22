@@ -873,7 +873,7 @@ class ObjectDetectionApp:
 
         correct_answer = self.current_question.get("correct_answer")
         is_correct = None
-        if correct_answer:
+        if voted is not None and correct_answer:
             is_correct = voted == correct_answer
             self.vote_results.append(1 if is_correct else 0)
 
