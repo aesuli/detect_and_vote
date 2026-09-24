@@ -1175,6 +1175,10 @@ class ObjectDetectionApp:
     def video_feed(self):
         cherrypy.response.headers["Content-Type"] = "multipart/x-mixed-replace; boundary=frame"
 
+        cherrypy.response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        cherrypy.response.headers["Pragma"] = "no-cache"
+        cherrypy.response.headers["Expires"] = "0"
+
         def generate():
             while True:
                 with self.lock:
@@ -1578,7 +1582,7 @@ def main(
         }
     }
 
-    cherrypy.config.update({"server.socket_host": host, "server.socket_port": port})
+    cherrypy.config.update({"server.thread_pool": 10, "server.socket_host": host, "server.socket_port": port})
     cherrypy.tree.mount(app, "/", config)
 
     print(f"Starting Count & Vote app on http://{host}:{port}")

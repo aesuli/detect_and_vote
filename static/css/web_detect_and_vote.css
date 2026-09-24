@@ -95,7 +95,7 @@ body {
   grid-template-columns: 360px 1fr;
   gap: 18px;
   padding: 18px;
-  padding-top: 28px;
+  padding-top: 6px;
 }
 
 .page.backend-hidden {
@@ -242,7 +242,7 @@ button:hover {
 .workspace {
   display: grid;
   grid-template-rows: auto auto;
-  gap: 14px;
+  gap: 5px;
 }
 
 .panel-hidden {
@@ -251,7 +251,7 @@ button:hover {
 
 .video-wrap {
   position: relative;
-  width: 100%;
+  width: 90%;
   max-width: 1100px;
   margin-left: auto;
   margin-right: auto;
@@ -651,7 +651,7 @@ button:hover {
   }
 
   .panel-toggle-content {
-    gap: 10px;
+    gap: 5px;
   }
 
   .panel-toggle-title {
